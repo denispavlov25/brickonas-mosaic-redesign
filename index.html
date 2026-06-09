@@ -1,0 +1,1976 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.2/cropper.min.css" integrity="sha512-6QxSiaKfNSQmmqwqpTNyhHErr+Bbm8u8HHSiinMEz0uimy9nu7lc/2NaXJiUJj2y4BApd5vgDjSHyLzC8nP6Ng==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="assets/png/icon-192x192.png" rel="icon" type="image/x-icon" />
+
+    <title>BRICKONAS - Mosaik BrickPic</title>
+    <meta name="description" content="BRICKONAS Mosaik BrickPic" />
+
+    <style>
+      /* === BRICKONAS THEME VARIABLES === */
+      :root {
+        --bk-green-primary: #2E7D32;
+        --bk-green-dark: #1B5E20;
+        --bk-green-light: #66BB6A;
+        --bk-green-pale: #C8E6C9;
+        --bk-green-accent: #A5D6A7;
+        --bk-off-white: #F5FAF5;
+        --bk-white: #FFFFFF;
+        --bk-light-gray: #F0F4F0;
+        --bk-gray: #E0E8E0;
+        --bk-medium-gray: #7A9A7C;
+        --bk-dark-gray: #5A6E5C;
+        --bk-charcoal: #2A352B;
+        --bk-near-black: #1A2A1B;
+        --bk-accent-red: #C62828;
+        --bk-radius-lg: 16px;
+        --bk-radius-md: 12px;
+        --bk-radius-sm: 8px;
+        --bk-shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+        --bk-shadow-md: 0 4px 16px rgba(0,0,0,0.1);
+        --bk-transition: 0.25s ease;
+        --bk-font-body: 'Nunito', sans-serif;
+        --bk-font-heading: 'Fredoka', sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        font-family: var(--bk-font-body);
+        background: var(--bk-off-white);
+        color: var(--bk-charcoal);
+        margin: 0;
+        padding: 0;
+      }
+
+      /* === PAGE LAYOUT === */
+      .mosaic-page { background: var(--bk-off-white); }
+      .mosaic-configurator { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+
+      /* === PROGRESS STEPPER === */
+      .mosaic-stepper {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 32px 20px 24px;
+        max-width: 800px;
+        margin: 0 auto;
+        position: relative;
+      }
+
+      .mosaic-stepper-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        position: relative;
+        z-index: 1;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .mosaic-stepper-step:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 18px;
+        left: calc(50% + 20px);
+        width: calc(100% - 40px);
+        height: 3px;
+        background: var(--bk-gray);
+        z-index: 0;
+      }
+
+      .mosaic-stepper-step.completed:not(:last-child)::after {
+        background: var(--bk-green-primary);
+      }
+
+      .stepper-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        background: var(--bk-gray);
+        color: var(--bk-medium-gray);
+        transition: all 0.3s ease;
+        position: relative;
+        z-index: 2;
+      }
+
+      .mosaic-stepper-step.active .stepper-circle {
+        background: var(--bk-green-primary);
+        color: var(--bk-white);
+        box-shadow: 0 0 0 4px rgba(46, 125, 50, 0.15);
+      }
+
+      .mosaic-stepper-step.completed .stepper-circle {
+        background: var(--bk-green-primary);
+        color: var(--bk-white);
+      }
+
+      .mosaic-stepper-step:hover .stepper-circle {
+        box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+      }
+
+      .stepper-label {
+        margin-top: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--bk-medium-gray);
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .mosaic-stepper-step.active .stepper-label {
+        color: var(--bk-green-primary);
+        font-weight: 600;
+      }
+
+      .mosaic-stepper-step.completed .stepper-label {
+        color: var(--bk-green-primary);
+      }
+
+      /* === LOADING BAR === */
+      .mosaic-loading-bar {
+        height: 4px;
+        margin-bottom: 0;
+        border-radius: 2px;
+        overflow: hidden;
+        background: var(--bk-gray);
+      }
+
+      .mosaic-loading-bar .progress-bar {
+        background-color: var(--bk-green-primary) !important;
+      }
+
+      .progress-bar.indeterminate {
+        position: relative;
+        animation: progress-indeterminate 3s linear infinite;
+      }
+
+      @keyframes progress-indeterminate {
+        from { left: -50%; width: 50%; }
+        to { left: 100%; width: 50%; }
+      }
+
+      /* === MAIN CONTENT CARD === */
+      .mosaic-card {
+        background: var(--bk-white);
+        border-radius: var(--bk-radius-lg);
+        box-shadow: var(--bk-shadow-sm);
+        padding: 32px;
+        margin-bottom: 24px;
+      }
+
+      .mosaic-card-compact { padding: 24px; }
+
+      /* === UPLOAD AREA === */
+      .mosaic-upload-area {
+        text-align: center;
+        padding: 48px 24px;
+      }
+
+      .mosaic-upload-area h2 {
+        font-family: var(--bk-font-heading);
+        font-size: 1.8rem;
+        margin-bottom: 12px;
+        color: var(--bk-near-black);
+      }
+
+      .mosaic-upload-area p {
+        color: var(--bk-dark-gray);
+        margin-bottom: 24px;
+        font-size: 1rem;
+        max-width: 500px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .mosaic-upload-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 36px;
+        background: var(--bk-green-primary);
+        color: var(--bk-white);
+        border: none;
+        border-radius: var(--bk-radius-sm);
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all var(--bk-transition);
+      }
+
+      .mosaic-upload-btn:hover:not(:disabled),
+      .mosaic-upload-btn:focus:not(:disabled),
+      .mosaic-upload-btn:active:not(:disabled) {
+        background: var(--bk-green-dark);
+        color: var(--bk-white);
+        transform: translateY(-2px);
+        box-shadow: var(--bk-shadow-md);
+      }
+
+      .mosaic-upload-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* "Choose a new image" under the step-1 canvas — secondary/compact so it
+         doesn't compete with the primary "Weiter" button in the nav row. */
+      #image-input-new { display: flex; justify-content: center; }
+      #image-input-new .mosaic-upload-btn {
+        background: var(--bk-white);
+        color: var(--bk-green-primary);
+        border: 1.5px solid var(--bk-green-pale);
+        padding: 8px 18px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        box-shadow: none;
+      }
+      #image-input-new .mosaic-upload-btn::before {
+        content: "\21BB";
+        font-size: 1rem;
+        line-height: 1;
+      }
+      #image-input-new .mosaic-upload-btn:hover:not(:disabled),
+      #image-input-new .mosaic-upload-btn:focus:not(:disabled) {
+        background: var(--bk-green-pale);
+        color: var(--bk-green-dark);
+        border-color: var(--bk-green-primary);
+        transform: none;
+        box-shadow: none;
+      }
+
+      .mosaic-upload-formats {
+        margin-top: 16px;
+        font-size: 0.85rem;
+        color: var(--bk-medium-gray);
+      }
+
+      /* === EXAMPLE IMAGES GRID === */
+      .mosaic-examples {
+        margin-top: 28px;
+      }
+      .mosaic-examples-divider {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--bk-medium-gray);
+      }
+      .mosaic-examples-divider::before,
+      .mosaic-examples-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.08);
+      }
+      .mosaic-examples-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+      .mosaic-example-card {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        padding: 0;
+        border: 2px solid transparent;
+        border-radius: 12px;
+        background: var(--bk-light-gray);
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+      .mosaic-example-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.3s ease;
+      }
+      .mosaic-example-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--bk-green, #2E7D32);
+        box-shadow: 0 6px 16px rgba(46, 125, 50, 0.18);
+      }
+      .mosaic-example-card:hover img {
+        transform: scale(1.06);
+      }
+      .mosaic-example-card:focus-visible {
+        outline: 3px solid var(--bk-green, #2E7D32);
+        outline-offset: 2px;
+      }
+      .mosaic-example-card.is-loading {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .mosaic-example-card.is-loading::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        width: 28px;
+        height: 28px;
+        border: 3px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: bk-spin 0.7s linear infinite;
+      }
+      @keyframes bk-spin {
+        to { transform: rotate(360deg); }
+      }
+      @media (max-width: 480px) {
+        .mosaic-examples-grid { gap: 8px; }
+      }
+
+      /* === STEP LAYOUT (side-by-side grid) === */
+      .step-container { display: none; }
+      .step-container.active { display: block; }
+
+      .mosaic-step-layout {
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        gap: 24px;
+        align-items: start;
+      }
+
+      @media (max-width: 768px) {
+        .mosaic-step-layout { grid-template-columns: 1fr; }
+      }
+
+      .mosaic-canvas-area {
+        background: var(--bk-light-gray);
+        border-radius: var(--bk-radius-md);
+        min-height: 200px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .mosaic-canvas-area canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* Smaller canvas in steps 2 and 3 to reduce scrolling */
+      #visual-step-2 .mosaic-canvas-area,
+      #visual-step-3 .mosaic-canvas-area {
+        max-width: 480px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .mosaic-controls-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      /* === CONTROL SECTIONS (collapsible panels) === */
+      .mosaic-control-section {
+        background: var(--bk-white);
+        border: 1px solid var(--bk-gray);
+        border-radius: var(--bk-radius-md);
+        box-shadow: var(--bk-shadow-sm);
+        overflow: hidden;
+      }
+
+      .mosaic-control-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 16px;
+        cursor: pointer;
+        user-select: none;
+        font-family: var(--bk-font-heading);
+        font-weight: 600;
+        font-size: 0.98rem;
+        color: var(--bk-near-black);
+        border: none;
+        border-bottom: 1px solid var(--bk-light-gray);
+        background: var(--bk-off-white);
+        width: 100%;
+        text-align: left;
+        transition: background 0.2s;
+      }
+
+      .mosaic-control-header:hover { background: var(--bk-light-gray); }
+
+      .mosaic-control-header::after {
+        content: '\25B8';
+        transition: transform 0.2s;
+        font-size: 0.8rem;
+        color: var(--bk-medium-gray);
+      }
+
+      .mosaic-control-header[aria-expanded="true"]::after,
+      .mosaic-control-header:not(.collapsed)::after {
+        transform: rotate(90deg);
+      }
+
+      .mosaic-control-body {
+        padding: 0 16px 16px;
+      }
+
+      .mosaic-control-body .form-label {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--bk-dark-gray);
+        margin-bottom: 4px;
+      }
+
+      .mosaic-control-body input[type="range"] {
+        width: 100%;
+        margin: 4px 0;
+        accent-color: var(--bk-green-primary);
+      }
+
+      .mosaic-control-body select {
+        width: 100%;
+        margin-top: 3px;
+        padding: 7px 10px;
+        border-radius: var(--bk-radius-sm);
+        border: 1px solid var(--bk-gray);
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--bk-charcoal);
+        background: var(--bk-white);
+        cursor: pointer;
+        transition: border-color 0.18s, box-shadow 0.18s;
+      }
+
+      .mosaic-control-body select:hover { border-color: var(--bk-green-accent); }
+      .mosaic-control-body select:focus {
+        outline: none;
+        border-color: var(--bk-green-primary);
+        box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.12);
+      }
+
+      /* === STEP TITLES === */
+      .mosaic-step-title {
+        font-family: var(--bk-font-heading);
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+        color: var(--bk-near-black);
+      }
+
+      .mosaic-step-subtitle {
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+        margin-bottom: 16px;
+      }
+
+      /* === STYLE PICKER (step 2) === */
+      .bk-style-picker {
+        margin: 0 0 18px;
+      }
+      .bk-style-picker-label {
+        font-family: var(--bk-font-heading, Fredoka, sans-serif);
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--bk-green-dark);
+        margin-bottom: 8px;
+      }
+      .bk-style-picker-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+      .bk-style-tile {
+        position: relative;
+        cursor: pointer;
+        border: 2px solid transparent;
+        border-radius: var(--bk-radius-md);
+        overflow: hidden;
+        background: var(--bk-light-gray, #f4f4f4);
+        transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+        padding: 0;
+      }
+      .bk-style-tile:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+      }
+      .bk-style-tile.active {
+        border-color: var(--bk-green-primary);
+        box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.18);
+      }
+      .bk-style-tile-preview {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        background: #222;
+      }
+      .bk-style-tile-label {
+        display: block;
+        text-align: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--bk-charcoal);
+        padding: 4px 2px 5px;
+        background: var(--bk-white);
+        line-height: 1.1;
+      }
+      .bk-style-tile.active .bk-style-tile-label {
+        color: var(--bk-green-dark);
+      }
+      .bk-style-picker-grid[data-busy="1"] .bk-style-tile {
+        cursor: wait;
+        opacity: 0.65;
+        pointer-events: none;
+      }
+      .bk-style-picker-grid[data-busy="1"] .bk-style-tile.active {
+        opacity: 1;
+      }
+      @media (max-width: 540px) {
+        .bk-style-picker-grid { gap: 6px; }
+        .bk-style-tile-label { font-size: 0.7rem; }
+      }
+
+      /* === DESIGN SERVICE CTA (step 2) === */
+      .bk-designservice {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 16px 18px 16px 20px;
+        margin-top: 18px;
+        background: var(--bk-green-pale);
+        border-left: 4px solid var(--bk-green-primary);
+        border-radius: var(--bk-radius-md);
+      }
+      .bk-designservice .bk-ds-text {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .bk-designservice .bk-ds-text strong {
+        font-family: var(--bk-font-heading, Fredoka, sans-serif);
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--bk-green-dark);
+        letter-spacing: 0.2px;
+      }
+      .bk-designservice .bk-ds-text span {
+        font-size: 0.86rem;
+        color: var(--bk-dark-gray);
+        line-height: 1.45;
+      }
+      .bk-designservice .bk-ds-btn {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 20px;
+        background: var(--bk-green-primary);
+        color: var(--bk-white);
+        border: none;
+        border-radius: var(--bk-radius-sm);
+        font-family: var(--bk-font-body);
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 2px 6px rgba(46, 125, 50, 0.25);
+        transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      }
+      .bk-designservice .bk-ds-btn::after {
+        content: "→";
+        font-size: 1rem;
+        line-height: 1;
+        transition: transform 0.2s;
+      }
+      .bk-designservice .bk-ds-btn:hover {
+        background: var(--bk-green-dark);
+        box-shadow: 0 4px 10px rgba(46, 125, 50, 0.35);
+        transform: translateY(-1px);
+      }
+      .bk-designservice .bk-ds-btn:hover::after {
+        transform: translateX(3px);
+      }
+      @media (max-width: 540px) {
+        .bk-designservice { flex-direction: column; align-items: stretch; gap: 12px; }
+        .bk-designservice .bk-ds-btn { width: 100%; justify-content: center; }
+      }
+
+      /* === NAVIGATION BUTTONS === */
+      .mosaic-nav-buttons {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 20px;
+        margin-top: 20px;
+        border-top: 1px solid var(--bk-gray);
+      }
+
+      .mosaic-nav-buttons .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 26px;
+        background: var(--bk-white);
+        color: var(--bk-green-dark);
+        border: 1.5px solid var(--bk-green-pale);
+        border-radius: var(--bk-radius-sm);
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all var(--bk-transition);
+      }
+
+      .mosaic-nav-buttons .btn-back:hover,
+      .mosaic-nav-buttons .btn-back:focus {
+        background: var(--bk-green-pale);
+        border-color: var(--bk-green-primary);
+        color: var(--bk-green-dark);
+      }
+
+      .mosaic-nav-buttons .btn-next {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 13px 32px;
+        background: var(--bk-green-primary);
+        color: var(--bk-white);
+        border: none;
+        border-radius: var(--bk-radius-sm);
+        font-weight: 700;
+        font-size: 0.98rem;
+        cursor: pointer;
+        box-shadow: 0 3px 10px rgba(46, 125, 50, 0.22);
+        transition: all var(--bk-transition);
+      }
+
+      .mosaic-nav-buttons .btn-next:hover,
+      .mosaic-nav-buttons .btn-next:focus {
+        background: var(--bk-green-dark);
+        color: var(--bk-white);
+        transform: translateY(-1px);
+        box-shadow: 0 5px 16px rgba(46, 125, 50, 0.3);
+      }
+
+      /* === SLIDER ROWS === */
+      .mosaic-slider-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .mosaic-slider-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--bk-green-primary);
+      }
+
+      .mosaic-slider-row .btn-sm {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 1px solid var(--bk-gray);
+        background: var(--bk-white);
+        color: var(--bk-charcoal);
+        font-size: 1rem;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .mosaic-slider-row .btn-sm:hover { background: var(--bk-light-gray); }
+
+      .mosaic-slider-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+        margin-bottom: 2px;
+      }
+
+      .mosaic-slider-label span:last-child {
+        font-family: var(--bk-font-heading);
+        font-weight: 600;
+        font-size: 0.8rem;
+        color: var(--bk-green-dark);
+        background: var(--bk-green-pale);
+        padding: 1px 10px;
+        border-radius: 999px;
+        min-width: 34px;
+        text-align: center;
+      }
+
+      /* === ADVANCED SETTINGS TOGGLE === */
+      .mosaic-advanced-section {
+        margin-top: 16px;
+        border-top: 1px solid var(--bk-gray);
+        padding-top: 12px;
+      }
+
+      .mosaic-advanced-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 10px 0;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--bk-dark-gray);
+        transition: color 0.2s;
+      }
+
+      .mosaic-advanced-toggle:hover { color: var(--bk-green-primary); }
+      .mosaic-advanced-toggle:focus { outline: none; }
+
+      .mosaic-advanced-icon { font-size: 1.1rem; }
+
+      .mosaic-advanced-chevron {
+        margin-left: auto;
+        font-size: 0.75rem;
+        transition: transform 0.3s ease;
+        color: var(--bk-medium-gray);
+      }
+
+      .mosaic-advanced-toggle[aria-expanded="true"] .mosaic-advanced-chevron {
+        transform: rotate(90deg);
+      }
+
+      .mosaic-advanced-body {
+        padding: 12px 0 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      /* === BELOW-CANVAS ACTIONS === */
+      .mosaic-below-canvas-actions {
+        text-align: center;
+        padding: 20px 0 8px;
+      }
+
+      .mosaic-below-canvas-actions .mosaic-upload-btn { margin: 0 auto; }
+
+      .mosaic-below-canvas-actions .mosaic-pdf-progress {
+        height: 37px;
+        margin-bottom: 12px;
+      }
+
+      /* === PRODUCT CARD (Shop-like order widget) === */
+      .mosaic-product-card {
+        margin-top: 24px;
+        background: var(--bk-white);
+        border: 1px solid var(--bk-gray);
+        border-radius: var(--bk-radius-md);
+        padding: 24px;
+        box-shadow: var(--bk-shadow-sm);
+        transition: box-shadow var(--bk-transition);
+      }
+      .mosaic-product-card:hover {
+        box-shadow: var(--bk-shadow-md);
+      }
+      .mosaic-product-title {
+        font-family: var(--bk-font-heading);
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--bk-charcoal);
+        margin: 0 0 8px;
+      }
+      .mosaic-product-meta {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 10px;
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+      }
+      .mosaic-product-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--bk-light-gray);
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+      }
+      .mosaic-product-desc {
+        font-size: 0.9rem;
+        color: var(--bk-dark-gray);
+        margin: 0 0 16px;
+        line-height: 1.5;
+      }
+      .mosaic-product-price-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .mosaic-product-price {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--bk-green-primary);
+        font-family: var(--bk-font-heading);
+      }
+      .mosaic-add-to-cart-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 32px;
+        background: linear-gradient(135deg, var(--bk-green-primary), var(--bk-green-dark));
+        color: var(--bk-white);
+        border: none;
+        border-radius: var(--bk-radius-sm);
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all var(--bk-transition);
+        box-shadow: 0 4px 12px rgba(46, 125, 50, 0.3);
+        font-family: var(--bk-font-body);
+      }
+      .mosaic-add-to-cart-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(46, 125, 50, 0.4);
+        background: linear-gradient(135deg, #339933, var(--bk-green-primary));
+      }
+      .mosaic-add-to-cart-btn.bk-added {
+        background: #43A047 !important;
+        pointer-events: none;
+      }
+      .mosaic-add-to-cart-btn.bk-added::after {
+        content: ' \2713';
+      }
+      .mosaic-add-to-cart-btn.bk-adding {
+        opacity: 0.7;
+        pointer-events: none;
+      }
+      .mosaic-add-to-cart-btn.bk-adding::after {
+        content: '...';
+      }
+      .mosaic-frame-addon {
+        margin-top: 16px;
+        padding: 14px 16px;
+        background: linear-gradient(135deg, #FFF8E1, #FFF3D6);
+        border: 1px solid #F0C870;
+        border-radius: var(--bk-radius-sm);
+        transition: all var(--bk-transition);
+      }
+      .mosaic-frame-addon:has(input:checked) {
+        background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+        border-color: var(--bk-green-primary);
+        box-shadow: 0 2px 8px rgba(46, 125, 50, 0.15);
+      }
+      .mosaic-frame-addon-label {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        cursor: pointer;
+        margin: 0;
+      }
+      .mosaic-frame-addon-label input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin: 2px 0 0 0;
+        accent-color: var(--bk-green-primary);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .mosaic-frame-addon-content {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+      }
+      .mosaic-frame-addon-title {
+        font-weight: 700;
+        color: #5D4037;
+        font-size: 0.95rem;
+      }
+      .mosaic-frame-addon-desc {
+        font-size: 0.82rem;
+        color: var(--bk-dark-gray);
+        line-height: 1.4;
+      }
+      .mosaic-frame-addon-price {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+      }
+      .mosaic-frame-price-old {
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+        text-decoration: line-through;
+      }
+      .mosaic-frame-price-new {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--bk-green-primary);
+        font-family: var(--bk-font-heading);
+      }
+      .mosaic-frame-discount-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #D32F2F;
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+        border-radius: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .mosaic-order-status {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: var(--bk-radius-sm);
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+      .mosaic-order-status.bk-sending {
+        display: flex;
+        background: #E3F2FD;
+        border: 1px solid #90CAF9;
+        color: #1565C0;
+      }
+      .mosaic-order-status.bk-sent {
+        display: flex;
+        background: #E8F5E9;
+        border: 1px solid #A5D6A7;
+        color: #2E7D32;
+      }
+      .mosaic-order-status.bk-error {
+        display: flex;
+        background: #FFF3E0;
+        border: 1px solid #FFE0B2;
+        color: #E65100;
+      }
+      .mosaic-order-hint {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 10px 14px;
+        background: #F5F5F5;
+        border-radius: var(--bk-radius-sm);
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: #555;
+      }
+      .mosaic-order-hint svg {
+        flex-shrink: 0;
+        margin-top: 2px;
+        color: #888;
+      }
+
+      /* === DOWNLOAD INSTRUCTIONS SECTION === */
+      .mosaic-download-section {
+        margin-top: 20px;
+        background: var(--bk-white);
+        border: 1px solid var(--bk-gray);
+        border-radius: var(--bk-radius-md);
+        padding: 20px 24px;
+        box-shadow: var(--bk-shadow-sm);
+      }
+      .mosaic-download-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .mosaic-download-header svg {
+        flex-shrink: 0;
+        color: var(--bk-green-primary);
+      }
+      .mosaic-download-header h4 {
+        margin: 0;
+        font-family: var(--bk-font-heading);
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--bk-charcoal);
+      }
+      .mosaic-download-desc {
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+        line-height: 1.5;
+        margin: 0 0 16px;
+      }
+      .mosaic-download-section .mosaic-pdf-progress {
+        height: 37px;
+        margin-bottom: 12px;
+        border-radius: var(--bk-radius-sm);
+        overflow: hidden;
+        background: var(--bk-light-gray);
+      }
+      .mosaic-download-section .mosaic-pdf-progress .progress-bar {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--bk-white);
+      }
+      .mosaic-download-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .mosaic-download-actions .mosaic-action-btn {
+        padding: 12px 24px;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      .mosaic-quality-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: var(--bk-dark-gray);
+        cursor: pointer;
+        user-select: none;
+      }
+      .mosaic-quality-toggle input[type="checkbox"] {
+        accent-color: var(--bk-green-primary);
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+      }
+      .mosaic-download-hint {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 10px 14px;
+        background: #E3F2FD;
+        border: 1px solid #90CAF9;
+        border-radius: var(--bk-radius-sm);
+        font-size: 0.8rem;
+        color: #1565C0;
+        line-height: 1.4;
+      }
+      .mosaic-download-hint svg {
+        flex-shrink: 0;
+        margin-top: 1px;
+        color: #1976D2;
+      }
+
+      /* === PIECE STATS === */
+      .mosaic-piece-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .mosaic-piece-stat {
+        background: var(--bk-light-gray);
+        padding: 12px;
+        border-radius: var(--bk-radius-sm);
+        text-align: center;
+      }
+
+      .mosaic-piece-stat .stat-value {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--bk-green-primary);
+      }
+
+      .mosaic-piece-stat .stat-label {
+        font-size: 0.75rem;
+        color: var(--bk-dark-gray);
+        margin-top: 2px;
+      }
+
+      /* === ACTION BUTTONS === */
+      .mosaic-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 18px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        border-radius: var(--bk-radius-sm);
+        border: none;
+        cursor: pointer;
+        transition: all var(--bk-transition);
+      }
+
+      .mosaic-action-btn.primary { background: var(--bk-green-primary); color: var(--bk-white); }
+      .mosaic-action-btn.primary:hover { background: var(--bk-green-dark); }
+      .mosaic-action-btn.secondary { background: var(--bk-light-gray); color: var(--bk-charcoal); border: 1px solid var(--bk-gray); }
+      .mosaic-action-btn.secondary:hover { background: var(--bk-gray); }
+      .mosaic-action-btn.warning { background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+      .mosaic-action-btn.warning:hover { background: #FFE0B2; }
+      .mosaic-action-btn.info { background: var(--bk-green-pale); color: var(--bk-green-dark); border: 1px solid var(--bk-green-accent); }
+      .mosaic-action-btn.info:hover { background: #C8E6C9; }
+
+      /* === PAINTBRUSH TOOLS === */
+      .mosaic-tools-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--bk-dark-gray);
+        margin-bottom: 6px;
+      }
+
+      .mosaic-tools-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px 12px;
+        background: var(--bk-light-gray);
+        border-radius: var(--bk-radius-sm);
+        margin-bottom: 12px;
+      }
+
+      .paintbrush-controls-button {
+        background-color: var(--bk-white);
+        border: 1px solid var(--bk-gray);
+        border-radius: var(--bk-radius-sm);
+        height: 36px;
+        min-width: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        padding: 0;
+      }
+
+      /* Dropdown tool selector needs auto width for text labels */
+      #paintbrush-tool-selection-dropdown {
+        width: auto;
+        padding: 0 10px;
+        gap: 6px;
+        font-size: 0.85rem;
+        white-space: nowrap;
+      }
+
+      .paintbrush-controls-button:hover:enabled {
+        background-color: var(--bk-green-pale);
+        border-color: var(--bk-green-light);
+      }
+
+      /* === CHECKBOX === */
+      .mosaic-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        color: var(--bk-charcoal);
+      }
+
+      .mosaic-checkbox input[type="checkbox"] {
+        accent-color: var(--bk-green-primary);
+        width: 16px;
+        height: 16px;
+      }
+
+      /* === HELP/WARNING CARDS === */
+      .mosaic-help-card {
+        background: var(--bk-green-pale);
+        border-radius: var(--bk-radius-sm);
+        padding: 12px 16px;
+        font-size: 0.85rem;
+        color: var(--bk-green-dark);
+        margin-bottom: 12px;
+      }
+
+      .mosaic-help-card b { color: var(--bk-green-primary); }
+
+      .mosaic-warning-card {
+        background: #FFF3E0;
+        border-radius: var(--bk-radius-sm);
+        padding: 12px 16px;
+        font-size: 0.85rem;
+        color: #BF360C;
+        margin-bottom: 12px;
+      }
+
+      /* === HIDDEN TABS === */
+      .mosaic-hidden-tabs { display: none !important; }
+
+      /* === TABLE OVERRIDES === */
+      .mosaic-configurator table {
+        border: 1px solid var(--bk-gray);
+        border-radius: var(--bk-radius-sm);
+        overflow: hidden;
+        width: 100%;
+        font-size: 0.85rem;
+      }
+
+      .mosaic-configurator table th {
+        background: var(--bk-light-gray);
+        font-weight: 600;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--bk-gray);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--bk-dark-gray);
+      }
+
+      .mosaic-configurator table td {
+        padding: 6px 12px;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+      }
+
+      .mosaic-configurator table tr:last-child td { border-bottom: none; }
+
+      /* === DROPDOWN OVERRIDES === */
+      .mosaic-configurator .dropdown-toggle {
+        padding: 6px 14px;
+        font-size: 0.85rem;
+        border-radius: var(--bk-radius-sm);
+      }
+
+      .mosaic-configurator .dropdown-menu {
+        border-radius: var(--bk-radius-sm);
+        box-shadow: var(--bk-shadow-md);
+        border: 1px solid var(--bk-gray);
+      }
+
+      /* === PROGRESS BAR OVERRIDES === */
+      .mosaic-configurator .progress {
+        border-radius: var(--bk-radius-sm);
+        overflow: hidden;
+      }
+
+      /* === LOADING OVERLAY (shows after 1s delay) === */
+      #loading-overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background-color: transparent;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        pointer-events: none;
+      }
+
+      #loading-overlay.hidden { display: none; }
+
+      #loading-overlay .spinner {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+
+      #loading-overlay.show-spinner .spinner {
+        opacity: 1;
+      }
+
+      .spinner {
+        width: 40px; height: 40px;
+        border: 4px solid rgba(46, 125, 50, 0.2);
+        border-top-color: var(--bk-green-primary);
+        border-radius: 50%;
+        animation: spinner-rotate 0.8s linear infinite;
+      }
+
+      @keyframes spinner-rotate { to { transform: rotate(360deg); } }
+
+      /* === MISC === */
+      .cropper-img { display: block; width: 100%; }
+      .cropper-container { max-width: 100% !important; width: 100% !important; }
+      #nonzero-missing-pieces-warning { color: var(--bk-accent-red); }
+      .checkbox-clickable { cursor: pointer; }
+      .piece-count-infinity-placeholder { padding-left: 2px; padding-right: 2px; font-weight: 600; font-size: 18px; }
+
+      .mosaic-configurator .card { background-color: var(--bk-white); border: 1px solid var(--bk-gray); border-radius: var(--bk-radius-md); }
+      .mosaic-configurator .card-header { padding: 0; border: 0; background: none; }
+
+      .visual-step { display: none; }
+      .visual-step.active { display: block; }
+      .internal-step { display: none !important; }
+
+      /* Bootstrap btn overrides in configurator */
+      .mosaic-configurator .btn-success { background-color: var(--bk-green-primary); border-color: var(--bk-green-primary); }
+      .mosaic-configurator .btn-success:hover { background-color: var(--bk-green-dark); border-color: var(--bk-green-dark); }
+      .mosaic-configurator .btn-info { background-color: var(--bk-green-pale); border-color: var(--bk-green-accent); color: var(--bk-green-dark); }
+      .mosaic-configurator .btn-warning { background: #FFF3E0; color: #E65100; border-color: #FFE0B2; }
+      .mosaic-configurator .btn-warning:hover { background: #FFE0B2; }
+
+      .mosaic-configurator a { text-decoration: none !important; color: inherit; }
+      .mosaic-configurator .btn-link { text-decoration: none !important; width: 100%; border-width: 0; }
+
+      /* === RESPONSIVE === */
+
+      /* Tablet */
+      @media (max-width: 768px) {
+        .mosaic-configurator { padding: 0 12px 40px; }
+        .mosaic-card { padding: 24px 16px; }
+        .mosaic-product-card { padding: 16px; }
+        .mosaic-product-price-row { flex-direction: column; align-items: stretch; }
+        .mosaic-add-to-cart-btn { width: 100%; justify-content: center; padding: 14px 20px; }
+        .mosaic-product-meta { flex-wrap: wrap; gap: 8px; }
+        .mosaic-download-section { padding: 16px; }
+        .mosaic-download-actions { flex-direction: column; align-items: stretch; }
+        .mosaic-download-actions .mosaic-action-btn { width: 100%; justify-content: center; }
+      }
+
+      /* Mobile */
+      @media (max-width: 600px) {
+        .mosaic-stepper { padding: 16px 4px 12px; gap: 0; }
+        .stepper-circle { width: 30px; height: 30px; font-size: 0.8rem; }
+        .stepper-label { font-size: 0.7rem; }
+        .mosaic-card { padding: 16px 12px; }
+        .mosaic-upload-area { padding: 24px 12px; }
+        .mosaic-upload-area h2 { font-size: 1.3rem; }
+        .mosaic-upload-area p { font-size: 0.9rem; }
+        .mosaic-upload-btn { padding: 12px 20px; font-size: 0.9rem; width: 100%; justify-content: center; }
+        .mosaic-piece-stats { grid-template-columns: 1fr; }
+        .mosaic-canvas-area { min-height: 180px; }
+        .mosaic-step-title { font-size: 1.1rem; }
+        .mosaic-step-subtitle { font-size: 0.8rem; }
+        .mosaic-nav-buttons { flex-direction: column; gap: 8px; }
+        .mosaic-nav-buttons .btn-back,
+        .mosaic-nav-buttons .btn-next { width: 100%; text-align: center; justify-content: center; }
+        .mosaic-control-header { padding: 10px 12px; font-size: 0.85rem; }
+        .mosaic-control-body { padding: 8px 10px 12px; }
+        .mosaic-product-card { padding: 14px; }
+        .mosaic-download-section { padding: 14px; }
+        .mosaic-download-header h4 { font-size: 1rem; }
+        .mosaic-download-desc { font-size: 0.8rem; }
+        .mosaic-download-hint { font-size: 0.75rem; }
+        .mosaic-product-title { font-size: 1.1rem; }
+        .mosaic-product-price { font-size: 1.3rem; }
+        .mosaic-product-desc { font-size: 0.85rem; }
+        .mosaic-advanced-toggle { font-size: 0.85rem; }
+        .mosaic-action-btn { padding: 8px 14px; font-size: 0.8rem; }
+        .mosaic-slider-label { font-size: 0.85rem; }
+        .paintbrush-controls { padding: 6px 8px; }
+        .mosaic-below-canvas-actions { padding: 12px 0 0; }
+      }
+
+      /* Small mobile */
+      @media (max-width: 400px) {
+        .mosaic-stepper { padding: 12px 0 8px; }
+        .stepper-circle { width: 26px; height: 26px; font-size: 0.7rem; }
+        .stepper-label { font-size: 0.65rem; }
+        .mosaic-card { padding: 12px 10px; margin-bottom: 16px; }
+        .mosaic-configurator { padding: 0 8px 30px; }
+        .mosaic-upload-area h2 { font-size: 1.1rem; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+
+    <div class="mosaic-page">
+      <canvas id="background-image-cache-canvas" hidden></canvas>
+
+      <!-- Visual Progress Stepper -->
+      <div class="mosaic-stepper" id="step-navigation" hidden>
+        <div class="mosaic-stepper-step active" data-vstep="1" id="vstep-btn-1">
+          <div class="stepper-circle">1</div>
+          <div class="stepper-label" data-i18n="stepperConfigure">Anpassen</div>
+        </div>
+        <div class="mosaic-stepper-step" data-vstep="2" id="vstep-btn-2">
+          <div class="stepper-circle">2</div>
+          <div class="stepper-label" data-i18n="stepperColors">Farben</div>
+        </div>
+        <div class="mosaic-stepper-step" data-vstep="3" id="vstep-btn-3">
+          <div class="stepper-circle">3</div>
+          <div class="stepper-label" data-i18n="stepperResult">Ergebnis</div>
+        </div>
+      </div>
+
+      <!-- Loading Progress -->
+      <div class="mosaic-configurator">
+        <div class="mosaic-loading-bar progress" id="universal-loading-progress" style="margin-bottom: 4px;">
+          <div class="progress-bar indeterminate"></div>
+        </div>
+        <div id="universal-loading-progress-complement" hidden style="height: 4px; margin-bottom: 4px;"></div>
+
+        <!-- ==========================================
+             UPLOAD CARD (Initial State)
+             ========================================== -->
+        <div id="image-input-card" class="mosaic-card">
+          <div class="mosaic-upload-area">
+            <h2 data-i18n="getStarted">Loslegen</h2>
+            <p data-i18n="mosaicUploadDesc">Lade hier ein Bild hoch. Es wird automatisch verarbeitet. Im nächsten Schritt kannst du das Format auswählen.</p>
+
+            <!-- Input pieces selector (hidden, kept for JS) -->
+            <div style="display:none;">
+              <button id="select-starting-custom-stud-map-button" data-toggle="dropdown" disabled></button>
+              <div class="dropdown-menu" id="select-starting-custom-stud-map-options"></div>
+              <small id="input-stud-map-description"></small>
+            </div>
+
+            <canvas id="input-canvas" hidden></canvas>
+            <canvas id="input-depth-canvas" hidden></canvas>
+            <span id="image-input">
+              <input type="file" id="input-image-selector-hidden" name="input-image-selector-hidden" hidden />
+              <button class="btn mosaic-upload-btn" type="button" id="input-image-selector" disabled data-i18n="selectInputImage">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                Eingabebild auswählen
+              </button>
+            </span>
+            <div class="mosaic-upload-formats" data-i18n="supportedFormatsShort">Erlaubte Dateien: JPG, PNG, GIF, WEBP</div>
+
+            <!-- Example images grid -->
+            <div class="mosaic-examples" id="mosaic-examples">
+              <div class="mosaic-examples-divider"><span data-i18n="orTryExample">Oder probiere ein Beispielbild</span></div>
+              <div class="mosaic-examples-grid" id="mosaic-examples-grid">
+                <button type="button" class="mosaic-example-card" data-example="tiger" aria-label="Tiger">
+                  <img src="assets/examples/tiger.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+                <button type="button" class="mosaic-example-card" data-example="dog" aria-label="Hund">
+                  <img src="assets/examples/dog.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+                <button type="button" class="mosaic-example-card" data-example="orange" aria-label="Portrait mit Orange">
+                  <img src="assets/examples/orange.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+                <button type="button" class="mosaic-example-card" data-example="paint-face" aria-label="Bunte Farben">
+                  <img src="assets/examples/paint-face.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+                <button type="button" class="mosaic-example-card" data-example="flower" aria-label="Blume">
+                  <img src="assets/examples/flower.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+                <button type="button" class="mosaic-example-card" data-example="louvre" aria-label="Louvre">
+                  <img src="assets/examples/louvre.jpg" alt="" loading="lazy" decoding="async" />
+                </button>
+              </div>
+            </div>
+
+            <span id="run-example-input-container" hidden>
+              <span style="margin: 0 8px; font-weight: 600">Oder</span>
+              <button class="mosaic-action-btn secondary" type="button" id="run-example-input" disabled data-i18n="seeAnExample">Beispiel ansehen</button>
+            </span>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             VISUAL STEP 1: CONFIGURE
+             ========================================== -->
+        <div id="visual-step-1" class="visual-step" hidden>
+          <div class="mosaic-card">
+            <div class="mosaic-step-title" data-i18n="step1Header">Zuschneiden & Skalieren</div>
+            <div class="mosaic-step-subtitle" data-i18n="step1Subtitle">Wähle den Bildausschnitt und die Auflösung deines Mosaiks</div>
+
+            <!-- Hidden tabs for JS compatibility -->
+            <ul class="nav nav-tabs mosaic-hidden-tabs" role="tablist">
+              <li class="nav-item"><a class="nav-link active" id="step-1-color-tab" data-toggle="tab" href="#step-1-color-tab-content" role="tab">Color</a></li>
+              <li class="nav-item"><a class="nav-link" id="step-1-depth-tab" data-toggle="tab" href="#step-1-depth-tab-content" role="tab">Depth</a></li>
+            </ul>
+
+            <div class="tab-content">
+              <div class="tab-pane fade show active" id="step-1-color-tab-content" role="tabpanel">
+
+                <div class="mosaic-step-layout">
+                  <!-- Canvas Area (left) -->
+                  <div>
+                    <div class="mosaic-canvas-area">
+                      <canvas id="step-1-canvas-upscaled" style="" class="cropper-img"></canvas>
+                    </div>
+                    <div id="image-input-new" style="margin-top: 12px;"></div>
+                  </div>
+
+                  <!-- Controls Panel (right) -->
+                  <div class="mosaic-controls-panel">
+                    <!-- Resolution (open by default) -->
+                    <div class="mosaic-control-section">
+                      <button class="mosaic-control-header" data-toggle="collapse" data-target="#ctrl-resolution" aria-expanded="true" data-i18n="resolution">Auflösung</button>
+                      <div id="ctrl-resolution" class="collapse show">
+                        <div class="mosaic-control-body">
+                          <div id="step-1-accordion">
+                            <div class="mosaic-slider-label">
+                              <span data-i18n="width">Breite:</span>
+                              <span id="width-text">48</span>
+                            </div>
+                            <input type="range" id="width-slider" min="48" max="288" step="48" value="48" />
+                            <div style="margin-bottom: 8px;">
+                              <label style="font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepWidth">Schrittweite Breite:</label>
+                              <select id="width-step-select">
+                                <option value="32">32</option>
+                                <option value="48" selected>48</option>
+                              </select>
+                            </div>
+
+                            <div class="mosaic-slider-label" style="margin-top: 12px;">
+                              <span data-i18n="height">Höhe:</span>
+                              <span id="height-text">48</span>
+                            </div>
+                            <input type="range" id="height-slider" min="48" max="288" step="48" value="48" />
+                            <div>
+                              <label style="font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepHeight">Schrittweite Höhe:</label>
+                              <select id="height-step-select">
+                                <option value="32">32</option>
+                                <option value="48" selected>48</option>
+                              </select>
+                            </div>
+
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                <!-- Hidden elements kept for JS compatibility -->
+                <div style="display:none;">
+                  <canvas id="web-worker-input-canvas"></canvas>
+                  <canvas id="web-worker-output-canvas"></canvas>
+                  <canvas id="step-1-depth-canvas"></canvas>
+                  <canvas id="step-1-depth-canvas-upscaled"></canvas>
+                  <input type="file" id="input-depth-image-selector-hidden" name="input-depth-image-selector-hidden" />
+                  <button id="input-depth-image-selector"></button>
+                  <button id="generate-depth-image"></button>
+                  <h5 id="web-worker-loading-message"></h5>
+                  <!-- Pixel piece (hidden, kept for JS) -->
+                  <button id="bricklink-piece-button" data-toggle="dropdown"></button>
+                  <div class="dropdown-menu" id="bricklink-piece-options"></div>
+                  <div id="pixel-dimensions-container-wrapper" hidden><div id="pixel-dimensions-container"></div></div>
+                  <!-- Interpolation (hidden, kept for JS) -->
+                  <button id="interpolation-algorithm-button" data-toggle="dropdown"></button>
+                  <div class="dropdown-menu" id="interpolation-algorithm-options"></div>
+                  <div id="color-ties-resolution-section"></div>
+                </div>
+
+                <!-- Color Adjustment controls (hidden, kept for JS) -->
+                <div style="display:none;">
+                  <input type="range" id="hue-slider" min="-180" max="180" value="0" />
+                  <span id="hue-text">0</span>
+                  <button id="hue-decrement">-</button>
+                  <button id="hue-increment">+</button>
+                  <input type="range" id="saturation-slider" min="-100" max="100" value="0" />
+                  <span id="saturation-text">0%</span>
+                  <button id="saturation-decrement">-</button>
+                  <button id="saturation-increment">+</button>
+                  <input type="range" id="value-slider" min="-100" max="100" value="0" />
+                  <span id="value-text">0%</span>
+                  <button id="value-decrement">-</button>
+                  <button id="value-increment">+</button>
+                  <button id="reset-hsv-button">Reset HSV</button>
+                  <input type="range" id="brightness-slider" min="-128" max="128" value="0" />
+                  <span id="brightness-text">0</span>
+                  <button id="brightness-decrement">-</button>
+                  <button id="brightness-increment">+</button>
+                  <button id="reset-brightness-button">Reset</button>
+                  <input type="range" id="contrast-slider" min="-128" max="128" value="0" />
+                  <span id="contrast-text">0</span>
+                  <button id="contrast-decrement">-</button>
+                  <button id="contrast-increment">+</button>
+                  <button id="reset-contrast-button">Reset</button>
+                </div>
+
+
+              </div>
+
+              <!-- Depth tab (hidden, for JS) -->
+              <div class="tab-pane fade" id="step-1-depth-tab-content" role="tabpanel"></div>
+            </div>
+
+            <div class="mosaic-nav-buttons">
+              <div></div>
+              <button class="btn-next" type="button" id="create-mosaic-btn" data-i18n="nextColors">Weiter: Farben &#x2192;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             VISUAL STEP 2: FARBEN VERFEINERN (Refine Colors)
+             ========================================== -->
+        <div id="visual-step-2" class="visual-step" hidden>
+          <div class="mosaic-card">
+            <div class="mosaic-step-title" data-i18n="refineColors">Farben verfeinern</div>
+            <div class="mosaic-step-subtitle" data-i18n="refineColorsSubtitle">Bearbeite einzelne Pixel mit dem Pinsel, um dein Mosaik zu perfektionieren</div>
+
+            <!-- Style picker -->
+            <div class="bk-style-picker" id="bk-style-picker" hidden>
+              <div class="bk-style-picker-label" data-i18n="stylePickerLabel">Wähle einen Stil</div>
+              <div class="bk-style-picker-grid" id="bk-style-picker-grid"></div>
+            </div>
+
+            <!-- Canvas with pixelated mosaic -->
+            <div class="mosaic-canvas-area" style="margin-bottom: 16px;">
+              <canvas id="step-3-canvas" hidden></canvas>
+              <canvas id="step-3-canvas-upscaled" style=""></canvas>
+            </div>
+
+            <!-- Paintbrush Tools -->
+            <div class="mosaic-tools-label">Pixel bearbeiten</div>
+            <div class="mosaic-tools-bar">
+              <div class="btn-group">
+                <button class="btn dropdown-toggle paintbrush-controls-button" type="button" id="paintbrush-tool-selection-dropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.067 6.067 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.118 8.118 0 0 1-3.078.132 3.659 3.659 0 0 1-.562-.135 1.382 1.382 0 0 1-.466-.247.714.714 0 0 1-.204-.288.622.622 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896.126.007.243.025.348.048.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04z"/></svg>
+                </button>
+                <div class="dropdown-menu" id="paintbrush-tool-selection-dropdown-options">
+                  <a class="dropdown-item btn" id="paintbrush-tool-dropdown-option"><span data-i18n="paintbrush">Pinsel</span></a>
+                  <a class="dropdown-item btn" id="eraser-tool-dropdown-option"><span data-i18n="eraser">Radierer</span></a>
+                  <a class="dropdown-item btn" id="dropdown-tool-dropdown-option"><span data-i18n="dropper">Pipette</span></a>
+                </div>
+              </div>
+              <span id="paintbrush-controls"> </span>
+              <button class="btn paintbrush-controls-button" type="button" id="clear-overrides-button" data-toggle="tooltip" title="Alle Pinseländerungen löschen" data-placement="top">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/></svg>
+              </button>
+            </div>
+
+            <!-- Piece Stats (hidden) -->
+            <div id="custom-stud-map-controls" style="display:none;">
+              <div class="mosaic-piece-stats">
+                <div class="mosaic-piece-stat">
+                  <div class="stat-value" id="required-studs">0</div>
+                  <div class="stat-label" data-i18n="requiredPieces">Erforderlich</div>
+                </div>
+                <div class="mosaic-piece-stat">
+                  <div class="stat-value" id="available-studs">0</div>
+                  <div class="stat-label" data-i18n="availablePieces">Verfügbar</div>
+                </div>
+                <div class="mosaic-piece-stat">
+                  <div class="stat-value" id="missing-studs">0</div>
+                  <div class="stat-label" data-i18n="missingPiecesLabel">Fehlend</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Available Colors (hidden, kept for JS) -->
+            <div style="display:none;">
+              <div class="mosaic-checkbox" id="infinite-piece-count-check-container">
+                <input type="checkbox" class="checkbox-clickable" id="infinite-piece-count-check" />
+                <span data-i18n="infinitePieceCounts">Unendliche Teileanzahl</span>
+              </div>
+              <div id="forced-infinite-piece-count-warning" hidden>
+                <small><p data-i18n="infinitePieceCountsWarning"><b>Wichtig</b>: Unendliche Teileanzahlen wurden verwendet</p></small>
+              </div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="color">Farbe</th>
+                    <th scope="col" data-i18n="numberAvailable">Anzahl verfügbar</th>
+                  </tr>
+                </thead>
+                <tbody id="custom-stud-table-body"></tbody>
+              </table>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="mosaic-action-btn primary" id="add-custom-stud-button" data-i18n="addStud">+ Noppe hinzufügen</button>
+                <button class="mosaic-action-btn warning" type="button" id="clear-custom-studs-button" data-i18n="clearAvailablePieces">Alle löschen</button>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                <a id="export-stud-map-button" download="selected-studs.json" href="">
+                  <button class="mosaic-action-btn info" type="button" data-i18n="exportSelectedStuds">Exportieren</button>
+                </a>
+                <div class="btn-group">
+                  <button class="btn dropdown-toggle btn-outline-dark btn-sm" type="button" id="mix-in-stud-map-button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-i18n="mixInStuds">Set hinzufügen</button>
+                  <div class="dropdown-menu" id="mix-in-stud-map-options" aria-labelledby="mix-in-stud-map-button"></div>
+                  <input type="file" id="import-stud-map-file-input" name="import-stud-map-file-input" hidden />
+                </div>
+              </div>
+            </div>
+
+            <!-- Free design service: lets users hand off the photo to the
+                 BRICKONAS team if they're not happy with the auto-result.
+                 Routes to /kontakt/?ref=mosaik-designservice — the contact
+                 form's prefill recognises that ref and fills subject + message. -->
+            <div class="bk-designservice">
+              <div class="bk-ds-text">
+                <strong data-i18n="dsTitle">Designservice</strong>
+                <span data-i18n="dsDesc">Du bist nicht zufrieden mit dem Ergebnis? Schick uns dein Foto und wir erstellen dir kostenlos einen optimierten Mosaik-Vorschlag per E-Mail.</span>
+              </div>
+              <button type="button" class="bk-ds-btn" id="bk-designservice-btn" data-i18n="dsButton">Designservice anfragen</button>
+            </div>
+
+            <div class="mosaic-nav-buttons">
+              <button class="btn-back" type="button" id="back-to-step1-btn" data-i18n="backConfigure">&#x2190; Zurück: Anpassen</button>
+              <button class="btn-next" type="button" id="go-to-result-btn" data-i18n="nextOutput">Weiter: Ergebnis &#x2192;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             VISUAL STEP 3: RESULT
+             ========================================== -->
+        <div id="visual-step-3" class="visual-step" hidden>
+          <div class="mosaic-card">
+            <div class="mosaic-step-title" data-i18n="step4Header">Ergebnis</div>
+            <div class="mosaic-step-subtitle" data-i18n="step4Subtitle">Dein fertiges BRICKONAS Klemmbaustein-Mosaik</div>
+
+            <!-- Hidden tabs for JS -->
+            <ul class="nav nav-tabs mosaic-hidden-tabs" role="tablist">
+              <li class="nav-item"><a class="nav-link active" id="step-4-color-tab" data-toggle="tab" href="#step-4-color-tab-content" role="tab">Color</a></li>
+              <li class="nav-item"><a class="nav-link" id="step-4-depth-tab" data-toggle="tab" href="#step-4-depth-tab-content" role="tab">Depth</a></li>
+            </ul>
+
+            <div class="tab-content">
+              <div class="tab-pane fade show active" id="step-4-color-tab-content" role="tabpanel">
+
+                <!-- Canvas -->
+                <div class="mosaic-canvas-area" style="margin-bottom: 0;">
+                  <canvas id="step-4-canvas" hidden></canvas>
+                  <canvas id="bricklink-cache-canvas" hidden></canvas>
+                  <canvas id="step-4-canvas-upscaled" style=""></canvas>
+                </div>
+
+                <!-- Product Card: Order Mosaic -->
+                <div class="mosaic-product-card" id="mosaic-product-card">
+                  <div class="mosaic-product-info">
+                    <h3 class="mosaic-product-title">Individuelles BRICKONAS Klemmbaustein-Mosaik</h3>
+                    <div class="mosaic-product-meta" id="mosaic-product-meta">
+                      <span class="mosaic-product-size" id="mosaic-product-size">48 &times; 48 Noppen</span>
+                      <span class="mosaic-product-pieces" id="mosaic-product-pieces">2.304 Teile</span>
+                    </div>
+                    <p class="mosaic-product-desc">Wir fertigen dein individuelles Mosaik aus hochwertigen LEGO&reg;-kompatiblen Steinen &ndash; inkl. gedruckter Bauanleitung.</p>
+                    <div class="mosaic-product-price-row">
+                      <span class="mosaic-product-price" id="mosaic-product-price">69,99 &euro;</span>
+                      <button type="button" id="order-mosaic-button" class="mosaic-add-to-cart-btn">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+                        Bestellen
+                      </button>
+                    </div>
+                    <!-- Frame add-on (only for 48x48 / 48er) -->
+                    <div class="mosaic-frame-addon" id="mosaic-frame-addon" hidden>
+                      <label class="mosaic-frame-addon-label" for="mosaic-frame-checkbox">
+                        <input type="checkbox" id="mosaic-frame-checkbox" />
+                        <span class="mosaic-frame-addon-content">
+                          <span class="mosaic-frame-addon-title" data-i18n="frameAddonTitle">Mit passendem Rahmen</span>
+                          <span class="mosaic-frame-addon-desc" data-i18n="frameAddonDesc">Eleganter Rahmen f&uuml;r dein 48&times;48 Mosaik (38,4 &times; 38,4 cm) &mdash; perfekt zum Aufh&auml;ngen.</span>
+                          <span class="mosaic-frame-addon-price">
+                            <span class="mosaic-frame-price-old">39,00 &euro;</span>
+                            <span class="mosaic-frame-price-new">29,00 &euro;</span>
+                            <span class="mosaic-frame-discount-badge" data-i18n="frameAddonBundle">Bundle &minus;10 &euro;</span>
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <div class="mosaic-order-status" id="mosaic-order-status"></div>
+                    <div class="mosaic-order-hint" id="mosaic-order-hint">
+                      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                      <span>Beim Bestellen wird deine individuelle Bauanleitung vorbereitet. Das kann einen Moment dauern &mdash; bei gr&ouml;&szlig;eren Mosaiks bis zu einer Minute. Bitte schlie&szlig;e die Seite nicht.</span>
+                    </div>
+
+                    <!-- Admin-only download (revealed by ?admin=... token check in index.js) -->
+                    <div class="mosaic-admin-download" id="mosaic-admin-download" hidden style="margin-top:14px;padding:12px;border:1px dashed #2E7D32;border-radius:8px;background:#f1f8f2;">
+                      <div style="font-size:12px;color:#2E7D32;font-weight:600;margin-bottom:8px;">Admin-Modus</div>
+                      <button type="button" id="admin-download-pdf-button" style="background:#2E7D32;color:#fff;border:0;border-radius:6px;padding:10px 16px;font-weight:600;cursor:pointer;width:100%;">
+                        Anleitung als PDF herunterladen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hidden elements kept for JS compatibility (download UI removed; PDF is uploaded with order) -->
+                <div style="display:none;">
+                  <div class="progress mosaic-pdf-progress" id="pdf-progress-container" hidden>
+                    <div class="progress-bar" id="pdf-progress-bar" role="progressbar"></div>
+                  </div>
+                  <div id="instructions-canvas-container" hidden></div>
+                  <button type="button" id="download-instructions-button" hidden></button>
+                  <input type="checkbox" id="high-quality-instructions-check" checked />
+                  <div id="nonzero-missing-pieces-warning" hidden></div>
+                  <div id="step-4-accordion">
+                    <table class="table"><thead><tr><th>Farbe</th><th id="pieces-used-dimensions-header" hidden>Dim</th><th>Anzahl</th></tr></thead><tbody id="studs-used-table-body"></tbody></table>
+                    <div id="studs-missing-container" hidden><table class="table"><thead><tr><th>Farbe</th><th>Anzahl</th></tr></thead><tbody id="studs-missing-table-body"></tbody></table></div>
+                  </div>
+                  <button type="button" id="export-depth-to-bricklink-button" disabled></button>
+                </div>
+
+              </div>
+
+              <!-- Depth/3D tab -->
+              <div class="tab-pane fade show" id="step-4-depth-tab-content" role="tabpanel">
+                <div id="step-4-canvas-3d-upscaled" style=""></div>
+                <div id="step-4-depth-accordion" style="margin-top: 12px;">
+                  <div class="mosaic-control-section">
+                    <button class="mosaic-control-header collapsed" data-toggle="collapse" data-target="#depth-3d-settings" aria-expanded="false">3D Vorschau</button>
+                    <div id="depth-3d-settings" class="collapse">
+                      <div class="mosaic-control-body">
+                        <div class="mosaic-slider-label"><span>Vorschau-Intensität</span></div>
+                        <input type="range" id="3d-effect-intensity" min="0.015" max="0.03" step="0.005" value="0.01" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mosaic-control-section" style="margin-top: 8px;">
+                    <button class="mosaic-control-header collapsed" data-toggle="collapse" data-target="#depth-plates-section" aria-expanded="false">Tiefenplatten</button>
+                    <div id="depth-plates-section" class="collapse">
+                      <div class="mosaic-control-body"><div id="depth-plates-container"></div></div>
+                    </div>
+                  </div>
+                  <div class="mosaic-control-section" style="margin-top: 8px;">
+                    <button class="mosaic-control-header collapsed" data-toggle="collapse" data-target="#depth-instructions-section" aria-expanded="false">Bauanleitung (Tiefe)</button>
+                    <div id="depth-instructions-section" class="collapse">
+                      <div class="mosaic-control-body">
+                        <div class="progress" style="height: 37px" id="depth-pdf-progress-container" hidden>
+                          <div class="progress-bar" id="depth-pdf-progress-bar" role="progressbar" style="background-color: #17a2b8; transition: none"></div>
+                        </div>
+                        <button type="button" id="download-depth-instructions-button" class="mosaic-action-btn primary">Tiefen-Bauanleitung PDF</button>
+                        <div id="depth-instructions-canvas-container" hidden></div>
+                        <div class="mosaic-checkbox" style="margin-top: 8px;">
+                          <input type="checkbox" id="high-quality-depth-instructions-check" />
+                          <span>Hohe Qualität</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mosaic-nav-buttons">
+              <button class="btn-back" type="button" id="back-to-refine-btn" data-i18n="backColors">&#x2190; Zurück: Farben</button>
+              <div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== HIDDEN STEP CONTAINERS (for internal processing pipeline) ===== -->
+        <div class="internal-step">
+          <!-- Step 2 internal canvases -->
+          <canvas id="step-2-canvas" hidden></canvas>
+          <canvas id="step-2-canvas-upscaled" hidden></canvas>
+          <div id="step-2-color-tab-content"></div>
+          <div id="step-2-depth-tab-content">
+            <canvas id="step-2-depth-canvas-cropper-buffer" hidden></canvas>
+            <canvas id="step-2-depth-canvas" hidden></canvas>
+            <canvas id="step-2-depth-canvas-upscaled" hidden></canvas>
+            <input type="range" id="num-depth-levels-slider" name="num-depth-levels-slider" min="2" max="4" value="3" hidden />
+            <div id="depth-threshold-sliders-containers" hidden><input type="range" min="0" max="255" value="128" /></div>
+          </div>
+
+          <!-- Step 3 canvases are in visual-step-2 -->
+          <div id="step-3-color-tab-content"></div>
+          <div id="step-3-depth-tab-content">
+            <canvas id="step-3-depth-canvas" hidden></canvas>
+            <canvas id="step-3-depth-canvas-upscaled" hidden></canvas>
+            <button class="btn btn-warning" type="button" id="clear-depth-overrides-button" hidden>Clear depth overrides</button>
+          </div>
+
+          <!-- Metrics (hidden) -->
+          <div class="mosaic-card" id="metrics-card" hidden></div>
+        </div>
+
+        <!-- OLD step navigation elements (hidden for backward compat) -->
+        <div hidden>
+          <div id="steps-row"></div>
+          <div id="step-1" class="step-container active"></div>
+          <div id="step-2" class="step-container"></div>
+          <div id="step-3" class="step-container"></div>
+          <div id="step-4" class="step-container"></div>
+          <span id="num-depth-levels-text">3</span>
+          <a id="step-2-color-tab" class="nav-link active">Color</a>
+          <a id="step-2-depth-tab" class="nav-link">Depth</a>
+          <a id="step-3-color-tab" class="nav-link active">Color</a>
+          <a id="step-3-depth-tab" class="nav-link">Depth</a>
+          <div id="run-example-input-container"></div>
+        </div>
+
+        <!-- Hidden example links -->
+        <small hidden>
+          <a target="_blank" id="hogwarts-crest-example-instructions-link" href="assets/pdf/lego-art-remix-discount-hogwarts-crest-instructions.pdf">Example</a>
+          <a target="_blank" id="31201-lego-website-link" href="https://www.lego.com/en-us/product/harry-potter-hogwarts-crests-31201">set 31201</a>
+        </small>
+
+      </div><!-- /mosaic-configurator -->
+    </div><!-- /mosaic-page -->
+
+    <style>
+      /* Tiny always-visible legal credit — injected as the last child of every visible .mosaic-card. */
+      .bk-mosaic-credit-tiny {
+        padding: 12px 8px 6px;
+        font-size: 8px;
+        line-height: 1.25;
+        color: #d8ddd8;
+        text-align: center;
+        opacity: 0.55;
+        letter-spacing: 0.1px;
+      }
+      .bk-mosaic-credit-tiny a {
+        color: #cdd4ce;
+        text-decoration: none;
+      }
+      .bk-mosaic-credit-tiny a:hover {
+        text-decoration: underline;
+      }
+    </style>
+    <script>
+      (function () {
+        var html = 'Basiert auf <a href="https://github.com/debkbanerji/lego-art-remix" target="_blank" rel="noopener">Lego Art Remix</a> (GPL-3.0) &middot; <a href="https://github.com/denispavlov25/brickonas-mosaic" target="_blank" rel="noopener">Quellcode</a> &middot; LEGO&reg; ist eine Marke der LEGO Gruppe';
+        function inject() {
+          document.querySelectorAll('.mosaic-card').forEach(function (card) {
+            if (card.querySelector(':scope > .bk-mosaic-credit-tiny')) return;
+            var el = document.createElement('div');
+            el.className = 'bk-mosaic-credit-tiny';
+            el.innerHTML = html;
+            card.appendChild(el);
+          });
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', inject);
+        } else {
+          inject();
+        }
+      })();
+    </script>
+
+    <!-- JavaScript Dependencies -->
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.debug.js" integrity="sha384-NaWTHo/8YCBYJ59830LTz/P4aQZK1sS0SneOgAvhsIl3zBu8r9RevNg5lHCHAuQ/" crossorigin="anonymous"></script>
+    <script src="https://d3js.org/d3.v5.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-color-difference"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.2/cropper.min.js" integrity="sha512-IlZV3863HqEgMeFLVllRjbNOoh8uVj0kgx0aYxgt4rdBABTZCl/h5MfshHD9BrnVs6Rs9yNN7kUQpzhcLkNmHw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="js/pixi.min.js"></script>
+    <script src="js/bricklink-colors.js?v=1"></script>
+    <script src="js/stud-maps.js?v=1"></script>
+    <script src="js/heap.js"></script>
+    <script src="js/i18n.js?v=27"></script>
+    <script src="js/algo.js?v=26"></script>
+    <script src="js/index.js?v=43"></script>
+
+    <script>
+      // Notify parent iframe of height changes for dynamic resizing
+      (function() {
+        var lastHeight = 0;
+        function postHeight() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.scrollHeight
+          );
+          if (h !== lastHeight && h > 0) {
+            lastHeight = h;
+            window.parent.postMessage({ type: 'mosaic-resize', height: h }, '*');
+          }
+        }
+        setInterval(postHeight, 300);
+        if (window.MutationObserver) {
+          new MutationObserver(postHeight).observe(document.body, {
+            childList: true, subtree: true, attributes: true
+          });
+        }
+        window.addEventListener('load', function() { setTimeout(postHeight, 100); });
+      })();
+    </script>
+  </body>
+</html>
