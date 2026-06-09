@@ -2474,8 +2474,8 @@ function setDPI(canvas, dpi) {
 // and JPEG to ~2 MB each (36 of them = ~72 MB at 288×288). We downscale the
 // finished canvas to a sane pixel cap before encoding: identical layout, a
 // fraction of the bytes. Detail pages stay full-res vectors (crisp numbers).
-const BK_OVERVIEW_MAX_PX = 1100;
-const BK_OVERVIEW_JPEG_Q = 0.82;
+const BK_OVERVIEW_MAX_PX = 1500;
+const BK_OVERVIEW_JPEG_Q = 0.85;
 
 // Downscale a canvas in place so its longest side is <= maxDim (no-op if already
 // smaller). Uses high-quality smoothing so the shrunk picture stays clean.
@@ -2774,6 +2774,15 @@ async function generateInstructions() {
             updatePlateDimensions();
             
             const isHighQuality = document.getElementById("high-quality-instructions-check").checked;
+            // Use the SAME fixed print scalings as the order-upload path
+            // (_generateBlobFromStep4). The global SCALING_FACTOR is capped small
+            // for large mosaics (to keep on-screen canvases ≤4096px), which made the
+            // admin-download title/overview canvases tiny → portrait page, clipped
+            // plate-grid, and low-res overviews. These constants decouple the PDF
+            // pages from the on-screen scale so the download matches the order PDF.
+            const PRINT_SCALING = 40;
+            const TITLE_SCALING = Math.max(25, Math.min(40, BASE_SCALING_FACTOR));
+            const ADMIN_MIN_PAGE = 1000;
             const step4PixelArray = getPixelArrayFromCanvas(step4Canvas);
             const resultImage = isBleedthroughEnabled()
                 ? revertDarkenedImage(
@@ -2796,7 +2805,7 @@ async function generateInstructions() {
                 PLATE_WIDTH,
                 PLATE_HEIGHT,
                 filteredAvailableStudHexList,
-                SCALING_FACTOR,
+                TITLE_SCALING,
                 step4CanvasUpscaled,
                 titlePageCanvas,
                 selectedPixelPartNumber,
@@ -2818,12 +2827,17 @@ async function generateInstructions() {
         // Same vector optimisation as the order-upload path: render geometry-only
         // plate/detail pages as vectors so the downloaded PDF is tiny and fast.
         const useVector = typeof window.bkDrawInstructionPageVector === "function";
+        // Enforce a minimum page size (1m square) so large mosaics never get a tiny
+        // page — mirrors the order-upload path. The page format is derived from the
+        // title canvas but never smaller than ADMIN_MIN_PAGE in either dimension.
+        const pageW = Math.max(titlePageCanvas.width, ADMIN_MIN_PAGE);
+        const pageH = Math.max(titlePageCanvas.height, ADMIN_MIN_PAGE);
         // compress ON — safe with the hybrid renderer (only sparse detail pages are
         // vector; dense overviews are raster JPEG). See note in _generateBlobFromStep4.
         let pdf = new jsPDF({
-            orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
+            orientation: pageW < pageH ? "p" : "l",
             unit: "mm",
-            format: [titlePageCanvas.width, titlePageCanvas.height],
+            format: [pageW, pageH],
             compress: true,
         });
 
@@ -2838,7 +2852,13 @@ async function generateInstructions() {
         document.getElementById("pdf-progress-container").hidden = false;
         document.getElementById("download-instructions-button").hidden = true;
 
-        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, (pdfWidth * titlePageCanvas.height) / titlePageCanvas.width);
+        // Fit-center the title image on the page (matches the order-upload path and
+        // the vector pages' placement so every page lines up identically).
+        const titleRatio = titlePageCanvas.width / titlePageCanvas.height;
+        let titleW = pdfWidth;
+        let titleH = pdfWidth / titleRatio;
+        if (titleH > pdfHeight) { titleH = pdfHeight; titleW = pdfHeight * titleRatio; }
+        pdf.addImage(imgData, "JPEG", (pdfWidth - titleW) / 2, (pdfHeight - titleH) / 2, titleW, titleH);
 
         // Remove title page canvas from DOM to free memory
         titlePageCanvas.remove();
@@ -2856,7 +2876,7 @@ async function generateInstructions() {
                     pixelArrayForPage,
                     plateWidthForPage,
                     filteredAvailableStudHexList,
-                    scalingOverride || SCALING_FACTOR,
+                    scalingOverride || PRINT_SCALING,
                     label,
                     selectedPixelPartNumber,
                     variableDims,
@@ -2872,7 +2892,7 @@ async function generateInstructions() {
                 pixelArrayForPage,
                 plateWidthForPage,
                 filteredAvailableStudHexList,
-                scalingOverride || SCALING_FACTOR,
+                scalingOverride || PRINT_SCALING,
                 instructionPageCanvas,
                 label,
                 selectedPixelPartNumber,
@@ -2886,13 +2906,19 @@ async function generateInstructions() {
             if (!overviewContext) bkCapCanvasToMaxDim(instructionPageCanvas, BK_OVERVIEW_MAX_PX);
             const pageImgData = instructionPageCanvas.toDataURL("image/jpeg",
                 !overviewContext ? BK_OVERVIEW_JPEG_Q : JPEG_QUALITY_PAGES);
+            // Fit-center on the page exactly like the vector pages (bkDraw…Vector)
+            // and the order-upload path, so overview + detail pages align.
+            const pgRatio = instructionPageCanvas.width / instructionPageCanvas.height;
+            let pgW = pdfWidth;
+            let pgH = pdfWidth / pgRatio;
+            if (pgH > pdfHeight) { pgH = pdfHeight; pgW = pdfHeight * pgRatio; }
             pdf.addImage(
                 pageImgData,
                 "JPEG",
-                0,
-                0,
-                pdfWidth,
-                (pdfWidth * instructionPageCanvas.height) / instructionPageCanvas.width
+                (pdfWidth - pgW) / 2,
+                (pdfHeight - pgH) / 2,
+                pgW,
+                pgH
             );
             instructionPageCanvas.width = 0;
             instructionPageCanvas.height = 0;
@@ -2944,9 +2970,9 @@ async function generateInstructions() {
                             label: `${i + 1}.${blockIdx}`,
                             variableDims: blockVariableDims,
                             // Match plate canvas size: detail block × 3 ≈ plate × 1 (at 48/16)
-                            scalingOverride: SCALING_FACTOR * (PLATE_WIDTH / BLOCK_SIZE),
+                            scalingOverride: PRINT_SCALING * (PLATE_WIDTH / BLOCK_SIZE),
                             // Keep the legend at the plate scale (smaller) instead of growing 3×.
-                            legendScalingOverride: SCALING_FACTOR,
+                            legendScalingOverride: PRINT_SCALING,
                             overviewContext: {
                                 fullPlateArray: subPixelArray,
                                 plateWidth: PLATE_WIDTH,
@@ -2972,9 +2998,9 @@ async function generateInstructions() {
                 pdf.save(`${t('pdfFilename')}-${t('pdfInstructions')}-${t('pdfPart')}-${numParts}.pdf`);
                 numParts++;
                 pdf = new jsPDF({
-                    orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
+                    orientation: pageW < pageH ? "p" : "l",
                     unit: "mm",
-                    format: [titlePageCanvas.width, titlePageCanvas.height],
+                    format: [pageW, pageH],
                     compress: true,
                 });
             } else {

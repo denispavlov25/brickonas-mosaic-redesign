@@ -1579,10 +1579,15 @@ function generateInstructionPage(
         pageLegendScale * 0.4 +
         pageLegendRowHeight * visibleStudHexList.length +
         pageLegendScale * 0.6;
+    // The legend is drawn starting at y ≈ pictureHeight * 0.2 (see the
+    // drawStudCountForContext call at the end of this function), so the canvas
+    // must reserve that offset PLUS the full legend height — otherwise a plate
+    // that uses many colours produces a legend taller than the canvas and the
+    // bottom rows get clipped. Including the 0.2 offset is the fix.
     canvas.height = Math.max(
         pictureHeight * 1.5,
         pictureHeight * 0.4 + visibleStudHexList.length * radius * 2.5,
-        pageLegendHeight + scalingFactor * 2
+        pictureHeight * 0.2 + pageLegendHeight + scalingFactor * 2
     );
     // Same canvas width on every page so the legend renders at the same
     // absolute size in the final PDF (changing the canvas width changes
