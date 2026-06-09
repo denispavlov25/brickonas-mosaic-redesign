@@ -2572,10 +2572,16 @@ async function _generateBlobFromStep4() {
     const pageW = Math.max(titlePageCanvas.width, MIN_PAGE_W);
     const pageH = Math.max(titlePageCanvas.height, MIN_PAGE_H);
     const imgData = titlePageCanvas.toDataURL("image/jpeg", JPEG_QUALITY_TITLE);
+    // NOTE: compress is intentionally OFF. jsPDF 1.5.3's built-in flate
+    // implementation corrupts large content streams ("Bad block header in flate
+    // stream") — the dense 48×48 plate-overview page (~2300 vector studs) comes
+    // out blank when compressed. Vector pages are already ~30× smaller than the
+    // old raster JPEGs, so we keep them uncompressed for correctness.
     let pdf = new jsPDF({
         orientation: pageW < pageH ? "p" : "l",
         unit: "mm",
         format: [pageW, pageH],
+        compress: false,
     });
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -2602,7 +2608,13 @@ async function _generateBlobFromStep4() {
     // Only applied when the plate is a multiple of BLOCK_SIZE; otherwise we keep
     // a single plate page (small plates like 16×16 are already readable).
     const BLOCK_SIZE = 16;
-    const helper = drawPdfInstructionPage;
+    // Render the (geometry-only) plate/detail pages as VECTORS instead of large
+    // JPEGs. This is the key upload-speed optimisation: a 144×144 mosaic dropped
+    // from ~73 MB of embedded JPEGs to a small vector PDF, while the on-page
+    // layout is byte-for-byte the same (the shim reuses generateInstructionPage
+    // and reproduces the raster "fit image centred on page" placement). The title
+    // page stays raster because it embeds the real preview photo + logo bitmap.
+    const useVector = typeof window.bkDrawInstructionPageVector === "function";
     for (var i = 0; i < totalPlates; i++) {
         await sleep(10);
         pdf.addPage();
@@ -2614,9 +2626,15 @@ async function _generateBlobFromStep4() {
             : getSubPixelMatrix(step3VariablePixelPieceDimensions, col * PLATE_WIDTH, row * PLATE_WIDTH, PLATE_WIDTH, PLATE_WIDTH);
 
         // Plate overview page (full PLATE_WIDTH × PLATE_WIDTH) — keeps customer orientation.
-        await helper(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
-            i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
-            pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES);
+        if (useVector) {
+            bkDrawInstructionPageVector(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
+                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
+                pdfWidth, pdfHeight);
+        } else {
+            await drawPdfInstructionPage(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
+                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
+                pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES);
+        }
 
         // Detail sub-pages: split the plate into BLOCK_SIZE × BLOCK_SIZE blocks.
         const blocksPerSide = PLATE_WIDTH / BLOCK_SIZE;
@@ -2644,9 +2662,15 @@ async function _generateBlobFromStep4() {
                     // page and the studs end up looking 3× too big).
                     const detailScaling = PRINT_SCALING * (PLATE_WIDTH / BLOCK_SIZE);
                     // But keep the legend at the plate scale so it doesn't grow 3×.
-                    await helper(pdf, blockArray, BLOCK_SIZE, filteredAvailableStudHexList, detailScaling,
-                        blockLabel, selectedPixelPartNumber, blockVariableDims,
-                        pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES, overviewContext, PRINT_SCALING);
+                    if (useVector) {
+                        bkDrawInstructionPageVector(pdf, blockArray, BLOCK_SIZE, filteredAvailableStudHexList, detailScaling,
+                            blockLabel, selectedPixelPartNumber, blockVariableDims,
+                            pdfWidth, pdfHeight, overviewContext, PRINT_SCALING);
+                    } else {
+                        await drawPdfInstructionPage(pdf, blockArray, BLOCK_SIZE, filteredAvailableStudHexList, detailScaling,
+                            blockLabel, selectedPixelPartNumber, blockVariableDims,
+                            pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES, overviewContext, PRINT_SCALING);
+                    }
                 }
             }
         }
@@ -2762,10 +2786,16 @@ async function generateInstructions() {
                                  : 0.93;
         const imgData = titlePageCanvas.toDataURL("image/jpeg", JPEG_QUALITY_TITLE);
 
+        // Same vector optimisation as the order-upload path: render geometry-only
+        // plate/detail pages as vectors so the downloaded PDF is tiny and fast.
+        const useVector = typeof window.bkDrawInstructionPageVector === "function";
+        // compress OFF — see note in _generateBlobFromStep4 (jsPDF 1.5.3 flate
+        // corrupts the dense plate-overview vector stream).
         let pdf = new jsPDF({
             orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
             unit: "mm",
             format: [titlePageCanvas.width, titlePageCanvas.height],
+            compress: false,
         });
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -2788,6 +2818,23 @@ async function generateInstructions() {
         // overviewContext (optional): { fullPlateArray, plateWidth, blockCol, blockRow, blockSize }
         // triggers a small thumbnail with the current block highlighted.
         const renderPageToPdf = (pixelArrayForPage, plateWidthForPage, label, variableDims, overviewContext, scalingOverride, legendScalingOverride) => {
+            if (useVector) {
+                bkDrawInstructionPageVector(
+                    pdf,
+                    pixelArrayForPage,
+                    plateWidthForPage,
+                    filteredAvailableStudHexList,
+                    scalingOverride || SCALING_FACTOR,
+                    label,
+                    selectedPixelPartNumber,
+                    variableDims,
+                    pdfWidth,
+                    pdfHeight,
+                    overviewContext,
+                    legendScalingOverride
+                );
+                return;
+            }
             const instructionPageCanvas = document.createElement("canvas");
             generateInstructionPage(
                 pixelArrayForPage,
@@ -2881,7 +2928,10 @@ async function generateInstructions() {
         for (var p = 0; p < pageJobs.length; p++) {
             await sleep(10);
 
-            if ((p + 1) % (isHighQuality ? 20 : 50) === 0) {
+            // Vector pages are tiny, so we never need to split into multiple files
+            // (splitting only existed to cap per-file JPEG memory). Keep the legacy
+            // split for the raster fallback path.
+            if (!useVector && (p + 1) % (isHighQuality ? 20 : 50) === 0) {
                 addWaterMark(pdf, isHighQuality);
                 pdf.save(`${t('pdfFilename')}-${t('pdfInstructions')}-${t('pdfPart')}-${numParts}.pdf`);
                 numParts++;
@@ -2889,6 +2939,7 @@ async function generateInstructions() {
                     orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
                     unit: "mm",
                     format: [titlePageCanvas.width, titlePageCanvas.height],
+                    compress: false,
                 });
             } else {
                 pdf.addPage();
