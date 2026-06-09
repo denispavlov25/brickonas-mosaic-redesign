@@ -58,23 +58,70 @@ const customStudTableBody = document.getElementById("custom-stud-table-body");
 var _isRunningStepProcessing = false;
 let _loadingSpinnerTimeout = null;
 
-function disableInteraction() {
+const BK_LOADER_DEFAULT_TITLE = "Dein Mosaik wird berechnet…";
+const BK_LOADER_DEFAULT_SUB = "Bei hoher Auflösung kann das einen Moment dauern.";
+
+// Update the text shown inside the loading overlay card.
+function setLoadingMessage(title, sub) {
+    const titleEl = document.getElementById("loading-overlay-title");
+    const subEl = document.getElementById("loading-overlay-sub");
+    if (titleEl) titleEl.innerHTML = title != null ? title : BK_LOADER_DEFAULT_TITLE;
+    if (subEl) subEl.innerHTML = sub != null ? sub : BK_LOADER_DEFAULT_SUB;
+}
+
+// Build loader options based on the current resolution. For large mosaics the
+// quantization/dithering blocks the main thread for a noticeable time, so we
+// show the loader IMMEDIATELY (and paint it before computing). For small
+// resolutions the work finishes in a few ms, so we keep the loader hidden via
+// a short delay and never flash it.
+function bkLoaderOptsForResolution() {
+    const area = targetResolution[0] * targetResolution[1];
+    const heavy = area >= 96 * 96; // ~9k+ studs (e.g. 96x96, 144x144, 288x288)
+    return {
+        immediate: heavy,
+        title: BK_LOADER_DEFAULT_TITLE,
+        sub: heavy
+            ? "Bei dieser Auflösung dauert das ein paar Sekunden – bitte kurz warten."
+            : BK_LOADER_DEFAULT_SUB,
+    };
+}
+
+// Let the browser paint the loading overlay before running heavy synchronous
+// work. A double rAF guarantees the "show-spinner" style change is committed
+// and painted before the blocking compute starts, so the user always sees the
+// loader during the freeze (instead of a frozen page with nothing happening).
+function bkPaintThenRun(fn) {
+    requestAnimationFrame(function () {
+        requestAnimationFrame(fn);
+    });
+}
+
+function disableInteraction(opts) {
+    opts = opts || {};
     interactionSelectors.forEach((button) => { if (button) button.disabled = true; });
     [...document.getElementsByTagName("input")].forEach((button) => (button.disabled = true));
     [...document.getElementsByClassName("btn")].forEach((button) => (button.disabled = true));
     [...document.getElementsByClassName("nav-link")].forEach((link) => (link.className = link.className + " disabled"));
     document.getElementById("universal-loading-progress").hidden = false;
     document.getElementById("universal-loading-progress-complement").hidden = true;
-    // Show overlay but delay spinner visibility by 1 second
     const overlay = document.getElementById("loading-overlay");
+    setLoadingMessage(opts.title, opts.sub);
     overlay.classList.remove("hidden");
-    overlay.classList.remove("show-spinner");
-    if (_loadingSpinnerTimeout) clearTimeout(_loadingSpinnerTimeout);
-    _loadingSpinnerTimeout = setTimeout(function() {
-        if (!overlay.classList.contains("hidden")) {
-            overlay.classList.add("show-spinner");
-        }
-    }, 1000);
+    if (_loadingSpinnerTimeout) { clearTimeout(_loadingSpinnerTimeout); _loadingSpinnerTimeout = null; }
+    if (opts.immediate) {
+        // Force a reflow so the fade/scale-in transition runs, then show now.
+        void overlay.offsetWidth;
+        overlay.classList.add("show-spinner");
+    } else {
+        // Light op: only reveal the loader if it ends up taking longer than a
+        // few hundred ms, so quick slider tweaks never flash it.
+        overlay.classList.remove("show-spinner");
+        _loadingSpinnerTimeout = setTimeout(function () {
+            if (!overlay.classList.contains("hidden")) {
+                overlay.classList.add("show-spinner");
+            }
+        }, 350);
+    }
     if (inputImageCropper != null) {
         inputImageCropper.disable();
     }
@@ -1318,8 +1365,19 @@ const debouncedRunStep2 = debounce(() => {
 }, DEBOUNCE_DELAY);
 
 function runStep2() {
-    disableInteraction();
+    const opts = bkLoaderOptsForResolution();
+    disableInteraction(opts);
     invalidateStepsFrom(3);
+    // Yield a paint frame before the heavy crop/pool/filter pass so the loader
+    // overlay is visible during the freeze. Light resolutions stay snappy.
+    if (opts.immediate) {
+        bkPaintThenRun(_runStep2Body);
+    } else {
+        setTimeout(_runStep2Body, 0);
+    }
+}
+
+function _runStep2Body() {
     let inputPixelArray;
     if (selectedInterpolationAlgorithm === "default") {
         const croppedCanvas = inputImageCropper.getCroppedCanvas({
@@ -1487,8 +1545,19 @@ function getVariablePixelAvailablePartDimensions() {
 let step3VariablePixelPieceDimensions = null;
 
 function runStep3() {
-    disableInteraction();
+    const opts = bkLoaderOptsForResolution();
+    disableInteraction(opts);
     invalidateStepsFrom(4);
+    // Yield a paint frame before the heavy quantization/dithering so the loader
+    // overlay is visible during the freeze. Light resolutions stay snappy.
+    if (opts.immediate) {
+        bkPaintThenRun(_runStep3Body);
+    } else {
+        setTimeout(_runStep3Body, 0);
+    }
+}
+
+function _runStep3Body() {
     const fiteredPixelArray = getPixelArrayFromCanvas(step2Canvas);
 
     let alignedPixelArray;
@@ -3771,6 +3840,32 @@ function collectMosaicOrderData() {
 // Order mosaic button — adds WooCommerce variation to cart
 var orderMosaicBtn = document.getElementById('order-mosaic-button');
 
+// Shopping-cart SVG used inside the order button (kept in sync with index.html).
+var BK_CART_SVG = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>';
+
+// Single source of truth for the order button appearance. The "added" state is
+// PERSISTENT — it stays until the customer changes the configuration (which
+// calls updateMosaicProductMeta → 'idle'), so they always know the mosaic is
+// already in the cart and don't accidentally order twice.
+function setOrderButtonState(state) {
+    var btn = document.getElementById('order-mosaic-button');
+    if (!btn) return;
+    btn.classList.remove('bk-adding', 'bk-added');
+    if (state === 'adding') {
+        btn.disabled = true;
+        btn.classList.add('bk-adding');
+        btn.innerHTML = BK_CART_SVG + ' Wird hinzugefügt';
+    } else if (state === 'added') {
+        btn.disabled = true;
+        btn.classList.add('bk-added');
+        btn.innerHTML = 'Im Warenkorb';
+    } else {
+        // idle
+        btn.disabled = false;
+        btn.innerHTML = BK_CART_SVG + ' Bestellen';
+    }
+}
+
 // WooCommerce variable product (parent) and lookup of all 40 variations.
 // Each entry: <plateType>_<W>x<H>: { vid, price }
 var MOSAIC_PARENT_PRODUCT_ID = 866; // BRICKONAS Mosaik nach Maß (variable)
@@ -3874,8 +3969,7 @@ if (orderMosaicBtn) {
         var btn = this;
 
         try {
-            btn.disabled = true;
-            btn.classList.add('bk-adding');
+            setOrderButtonState('adding');
 
             // If uploader is enabled, generate PDF + upload (with progress status)
             var mosaicToken = null;
@@ -3886,19 +3980,19 @@ if (orderMosaicBtn) {
                 try {
                     if (statusEl) {
                         statusEl.className = 'mosaic-order-status bk-sending';
-                        statusEl.innerHTML = '⏳ Anleitung wird vorbereitet... Bitte schlie&szlig;e die Seite nicht.';
+                        statusEl.innerHTML = '⏳ <strong>Deine Bauanleitung wird vorbereitet&hellip;</strong><br>Das kann bei gro&szlig;en Mosaiks bis zu einer Minute dauern. Bitte schlie&szlig;e die Seite nicht.';
                     }
                     console.log('[BRICKONAS] Generating PDF blob (high quality)...');
                     var blob = await generateInstructionsAsBlob();
                     console.log('[BRICKONAS] PDF blob generated, size:', blob.size, 'bytes (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)');
                     if (statusEl) {
-                        statusEl.innerHTML = '⏳ Anleitung wird hochgeladen (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)...';
+                        statusEl.innerHTML = '⏳ <strong>Anleitung wird hochgeladen&hellip;</strong><br>(' + (blob.size / 1024 / 1024).toFixed(1) + ' MB) &ndash; bitte einen Moment Geduld.';
                     }
                     mosaicToken = await uploadMosaicPdfToServer(blob, null);
                     if (mosaicToken) {
                         console.log('[BRICKONAS] PDF uploaded successfully, token:', mosaicToken);
                         if (statusEl) {
-                            statusEl.innerHTML = '⏳ Wird zum Warenkorb hinzugef&uuml;gt...';
+                            statusEl.innerHTML = '⏳ <strong>Wird zum Warenkorb hinzugef&uuml;gt&hellip;</strong>';
                         }
                     } else {
                         uploadFailed = true;
@@ -3952,37 +4046,44 @@ if (orderMosaicBtn) {
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     console.log('[BRICKONAS] Cart response:', data);
-                    btn.disabled = false;
-                    btn.classList.remove('bk-adding');
                     if (!data.error) {
-                        btn.classList.add('bk-added');
-                        setTimeout(function() { btn.classList.remove('bk-added'); }, 2500);
+                        setOrderButtonState('added');
+                        if (statusEl) {
+                            statusEl.className = 'mosaic-order-status bk-sent';
+                            statusEl.innerHTML = '\u2713 <strong>Dein Mosaik liegt im Warenkorb.</strong><br>Du kannst jetzt weiter einkaufen oder zur Kasse gehen.';
+                        }
+                    } else {
+                        setOrderButtonState('idle');
                     }
                 })
                 .catch(function(err) {
                     console.error('[BRICKONAS] Cart error:', err);
-                    btn.disabled = false;
-                    btn.classList.remove('bk-adding');
+                    setOrderButtonState('idle');
                 });
             }
 
-            // Safety: re-enable button after 10 seconds if no response
+            // Safety: if no response after a long time (large PDFs can take up to
+            // a minute), re-enable the button so the customer isn't stuck. Never
+            // clobber a finished "added" state.
             setTimeout(function() {
-                if (btn.disabled) {
+                var b = document.getElementById('order-mosaic-button');
+                if (b && b.classList.contains('bk-adding')) {
                     console.log('[BRICKONAS] Timeout: re-enabling button');
-                    btn.disabled = false;
-                    btn.classList.remove('bk-adding');
+                    setOrderButtonState('idle');
+                    if (statusEl && !statusEl.classList.contains('bk-error')) {
+                        statusEl.className = 'mosaic-order-status bk-error';
+                        statusEl.innerHTML = '\u26A0 Das dauert l&auml;nger als erwartet. Bitte versuche es erneut oder lade die Seite neu.';
+                    }
                 }
-            }, 10000);
+            }, 120000);
 
         } catch(err) {
             console.error('[BRICKONAS] Bestellen error:', err);
-            btn.disabled = false;
-            btn.classList.remove('bk-adding');
+            setOrderButtonState('idle');
             if (statusEl) {
                 statusEl.className = 'mosaic-order-status bk-error';
                 statusEl.innerHTML = '\u26A0 Fehler: ' + err.message;
-                setTimeout(function() { statusEl.className = 'mosaic-order-status'; }, 5000);
+                setTimeout(function() { statusEl.className = 'mosaic-order-status'; }, 8000);
             }
         }
     });
@@ -3993,17 +4094,22 @@ if (orderMosaicBtn) {
                 console.log('[BRICKONAS] Cart result:', e.data.success);
                 var btn = document.getElementById('order-mosaic-button');
                 if (!btn) return;
-                btn.disabled = false;
-                btn.classList.remove('bk-adding');
-                // Clear status text once added to cart, but ONLY if it's the "in progress" state
-                // (don't overwrite an upload-failed warning).
                 var statusElCart = document.getElementById('mosaic-order-status');
-                if (statusElCart && !statusElCart.classList.contains('bk-error')) {
-                    statusElCart.className = 'mosaic-order-status';
-                }
                 if (e.data.success) {
-                    btn.classList.add('bk-added');
-                    setTimeout(function() { btn.classList.remove('bk-added'); }, 2500);
+                    // PERSISTENT confirmation — button stays "Im Warenkorb ✓" and
+                    // a clear green message stays until the customer changes the
+                    // configuration, so they know the mosaic is in the cart.
+                    setOrderButtonState('added');
+                    if (statusElCart && !statusElCart.classList.contains('bk-error')) {
+                        statusElCart.className = 'mosaic-order-status bk-sent';
+                        statusElCart.innerHTML = '✓ <strong>Dein Mosaik liegt im Warenkorb.</strong><br>Du kannst jetzt weiter einkaufen oder zur Kasse gehen.';
+                    }
+                } else {
+                    setOrderButtonState('idle');
+                    if (statusElCart && !statusElCart.classList.contains('bk-error')) {
+                        statusElCart.className = 'mosaic-order-status bk-error';
+                        statusElCart.innerHTML = '⚠ Das Hinzuf&uuml;gen zum Warenkorb hat nicht geklappt. Bitte versuche es erneut.';
+                    }
                 }
             }
             if (e.data.type === 'mosaic-email-result') {
@@ -4083,12 +4189,23 @@ function updateMosaicProductMeta() {
         priceEl.innerHTML = formatted + ' &euro;';
         priceEl.style.display = '';
     }
-    // Update button text
+    // Reset the order button to its idle state whenever the configuration
+    // changes (resolution/frame). This clears a previous "Im Warenkorb ✓"
+    // confirmation so the customer can deliberately order the new variant.
     var btn = document.getElementById('order-mosaic-button');
     if (btn) {
-        var svgIcon = btn.querySelector('svg');
-        var svgHtml = svgIcon ? svgIcon.outerHTML : '';
-        btn.innerHTML = svgHtml + '\n                        Bestellen';
+        if (typeof setOrderButtonState === 'function' && (btn.classList.contains('bk-added') || btn.classList.contains('bk-adding'))) {
+            setOrderButtonState('idle');
+            var prevStatus = document.getElementById('mosaic-order-status');
+            if (prevStatus && prevStatus.classList.contains('bk-sent')) {
+                prevStatus.className = 'mosaic-order-status';
+                prevStatus.innerHTML = '';
+            }
+        } else {
+            var svgIcon = btn.querySelector('svg');
+            var svgHtml = svgIcon ? svgIcon.outerHTML : '';
+            btn.innerHTML = svgHtml + '\n                        Bestellen';
+        }
     }
     // Frame add-on is only available for 48x48 / 48er
     if (typeof updateFrameAddonVisibility === 'function') updateFrameAddonVisibility();
