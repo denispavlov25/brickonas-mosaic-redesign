@@ -2469,6 +2469,34 @@ function setDPI(canvas, dpi) {
     ctx.setTransform(scaleFactor, 0, 0, scaleFactor, 0, 0);
 }
 
+// Plate-OVERVIEW raster tuning. Overviews are dense full-plate pictures (48×48 =
+// 2304 studs) used only for orientation — at PRINT_SCALING they render to ~2600px
+// and JPEG to ~2 MB each (36 of them = ~72 MB at 288×288). We downscale the
+// finished canvas to a sane pixel cap before encoding: identical layout, a
+// fraction of the bytes. Detail pages stay full-res vectors (crisp numbers).
+const BK_OVERVIEW_MAX_PX = 1100;
+const BK_OVERVIEW_JPEG_Q = 0.82;
+
+// Downscale a canvas in place so its longest side is <= maxDim (no-op if already
+// smaller). Uses high-quality smoothing so the shrunk picture stays clean.
+function bkCapCanvasToMaxDim(canvas, maxDim) {
+    const longest = Math.max(canvas.width, canvas.height);
+    if (!maxDim || longest <= maxDim) return canvas;
+    const scale = maxDim / longest;
+    const tmp = document.createElement("canvas");
+    tmp.width = Math.max(1, Math.round(canvas.width * scale));
+    tmp.height = Math.max(1, Math.round(canvas.height * scale));
+    const tctx = tmp.getContext("2d");
+    tctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in tctx) tctx.imageSmoothingQuality = "high";
+    tctx.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+    canvas.width = tmp.width;
+    canvas.height = tmp.height;
+    canvas.getContext("2d").drawImage(tmp, 0, 0);
+    tmp.width = 0; tmp.height = 0;
+    return canvas;
+}
+
 // === BRICKONAS PDF UPLOAD INTEGRATION ===
 // Cross-origin parent: we cannot read window.parent.BK_MOSAIC_UPLOADER directly.
 // Instead, the parent page injects the config via a postMessage on iframe load,
@@ -2572,16 +2600,17 @@ async function _generateBlobFromStep4() {
     const pageW = Math.max(titlePageCanvas.width, MIN_PAGE_W);
     const pageH = Math.max(titlePageCanvas.height, MIN_PAGE_H);
     const imgData = titlePageCanvas.toDataURL("image/jpeg", JPEG_QUALITY_TITLE);
-    // NOTE: compress is intentionally OFF. jsPDF 1.5.3's built-in flate
-    // implementation corrupts large content streams ("Bad block header in flate
-    // stream") — the dense 48×48 plate-overview page (~2300 vector studs) comes
-    // out blank when compressed. Vector pages are already ~30× smaller than the
-    // old raster JPEGs, so we keep them uncompressed for correctness.
+    // HYBRID rendering (see loop below): dense plate-OVERVIEW pages are raster
+    // JPEGs, sparse DETAIL pages are vectors. Because no page now carries a huge
+    // vector stream, compression is safe to enable — jsPDF 1.5.3's flate only
+    // corrupted the ~2300-stud overview streams, which are no longer vector.
+    // Compression keeps big mosaics (288×288 → 361 pages) small AND viewer-
+    // friendly (Preview chokes on hundreds of thousands of uncompressed circles).
     let pdf = new jsPDF({
         orientation: pageW < pageH ? "p" : "l",
         unit: "mm",
         format: [pageW, pageH],
-        compress: false,
+        compress: true,
     });
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -2625,16 +2654,14 @@ async function _generateBlobFromStep4() {
             ? null
             : getSubPixelMatrix(step3VariablePixelPieceDimensions, col * PLATE_WIDTH, row * PLATE_WIDTH, PLATE_WIDTH, PLATE_WIDTH);
 
-        // Plate overview page (full PLATE_WIDTH × PLATE_WIDTH) — keeps customer orientation.
-        if (useVector) {
-            bkDrawInstructionPageVector(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
-                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
-                pdfWidth, pdfHeight);
-        } else {
-            await drawPdfInstructionPage(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
-                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
-                pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES);
-        }
+        // Plate overview page (full PLATE_WIDTH × PLATE_WIDTH) — keeps customer
+        // orientation. ALWAYS raster: it packs PLATE_WIDTH² studs (2304 at 48×48),
+        // so a vector version is both huge and the per-stud numbers aren't readable
+        // at this density anyway. A compressed JPEG is small and renders instantly.
+        await drawPdfInstructionPage(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
+            i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
+            pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES, null, null,
+            BK_OVERVIEW_MAX_PX, BK_OVERVIEW_JPEG_Q);
 
         // Detail sub-pages: split the plate into BLOCK_SIZE × BLOCK_SIZE blocks.
         const blocksPerSide = PLATE_WIDTH / BLOCK_SIZE;
@@ -2682,12 +2709,14 @@ async function _generateBlobFromStep4() {
 // Render one instruction page (plate overview or detail block) into the PDF.
 async function drawPdfInstructionPage(pdf, pixelArray, plateWidth, availableStudHexList, scaling,
                                        label, pixelType, variableDims,
-                                       pdfWidth, pdfHeight, isHighQuality, jpegQuality, overviewContext, legendScalingOverride) {
+                                       pdfWidth, pdfHeight, isHighQuality, jpegQuality, overviewContext, legendScalingOverride,
+                                       rasterMaxDim, rasterJpegQuality) {
     const canvas = document.createElement("canvas");
     generateInstructionPage(pixelArray, plateWidth, availableStudHexList, scaling,
         canvas, label, pixelType, variableDims, overviewContext, legendScalingOverride);
     setDPI(canvas, isHighQuality ? HIGH_DPI : LOW_DPI);
-    const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
+    if (rasterMaxDim) bkCapCanvasToMaxDim(canvas, rasterMaxDim);
+    const imgData = canvas.toDataURL("image/jpeg", rasterJpegQuality || jpegQuality);
     const ratio = canvas.width / canvas.height;
     let drawW = pdfWidth;
     let drawH = pdfWidth / ratio;
@@ -2789,13 +2818,13 @@ async function generateInstructions() {
         // Same vector optimisation as the order-upload path: render geometry-only
         // plate/detail pages as vectors so the downloaded PDF is tiny and fast.
         const useVector = typeof window.bkDrawInstructionPageVector === "function";
-        // compress OFF — see note in _generateBlobFromStep4 (jsPDF 1.5.3 flate
-        // corrupts the dense plate-overview vector stream).
+        // compress ON — safe with the hybrid renderer (only sparse detail pages are
+        // vector; dense overviews are raster JPEG). See note in _generateBlobFromStep4.
         let pdf = new jsPDF({
             orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
             unit: "mm",
             format: [titlePageCanvas.width, titlePageCanvas.height],
-            compress: false,
+            compress: true,
         });
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -2817,8 +2846,11 @@ async function generateInstructions() {
         // Render one page (plate overview or 16x16 detail) into the current pdf.
         // overviewContext (optional): { fullPlateArray, plateWidth, blockCol, blockRow, blockSize }
         // triggers a small thumbnail with the current block highlighted.
+        // Hybrid: detail pages (they carry an overviewContext) → vector; dense
+        // plate-overview pages (no overviewContext) → raster JPEG. Keeps the file
+        // small + viewer-friendly and lets compression stay on safely.
         const renderPageToPdf = (pixelArrayForPage, plateWidthForPage, label, variableDims, overviewContext, scalingOverride, legendScalingOverride) => {
-            if (useVector) {
+            if (useVector && overviewContext) {
                 bkDrawInstructionPageVector(
                     pdf,
                     pixelArrayForPage,
@@ -2849,7 +2881,11 @@ async function generateInstructions() {
                 legendScalingOverride
             );
             setDPI(instructionPageCanvas, isHighQuality ? HIGH_DPI : LOW_DPI);
-            const pageImgData = instructionPageCanvas.toDataURL("image/jpeg", JPEG_QUALITY_PAGES);
+            // This raster branch only runs for plate-overview pages (no
+            // overviewContext) — downscale them so the JPEG is small.
+            if (!overviewContext) bkCapCanvasToMaxDim(instructionPageCanvas, BK_OVERVIEW_MAX_PX);
+            const pageImgData = instructionPageCanvas.toDataURL("image/jpeg",
+                !overviewContext ? BK_OVERVIEW_JPEG_Q : JPEG_QUALITY_PAGES);
             pdf.addImage(
                 pageImgData,
                 "JPEG",
@@ -2939,7 +2975,7 @@ async function generateInstructions() {
                     orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
                     unit: "mm",
                     format: [titlePageCanvas.width, titlePageCanvas.height],
-                    compress: false,
+                    compress: true,
                 });
             } else {
                 pdf.addPage();
