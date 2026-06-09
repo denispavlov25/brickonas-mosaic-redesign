@@ -2655,13 +2655,21 @@ async function _generateBlobFromStep4() {
             : getSubPixelMatrix(step3VariablePixelPieceDimensions, col * PLATE_WIDTH, row * PLATE_WIDTH, PLATE_WIDTH, PLATE_WIDTH);
 
         // Plate overview page (full PLATE_WIDTH × PLATE_WIDTH) — keeps customer
-        // orientation. ALWAYS raster: it packs PLATE_WIDTH² studs (2304 at 48×48),
-        // so a vector version is both huge and the per-stud numbers aren't readable
-        // at this density anyway. A compressed JPEG is small and renders instantly.
-        await drawPdfInstructionPage(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
-            i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
-            pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES, null, null,
-            BK_OVERVIEW_MAX_PX, BK_OVERVIEW_JPEG_Q);
+        // orientation. VECTOR: packs PLATE_WIDTH² studs (2304 at 48×48) as crisp
+        // vector circles+numbers (no pixelation at any zoom). This is only viable
+        // because jsPDF 2.x's deflate compresses the dense stream correctly (jsPDF
+        // 1.5.3's flate corrupted it → "Bad block header" → blank page, which is why
+        // overviews used to be raster JPEGs). See index.html jsPDF version note.
+        if (useVector) {
+            bkDrawInstructionPageVector(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
+                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
+                pdfWidth, pdfHeight, null, PRINT_SCALING);
+        } else {
+            await drawPdfInstructionPage(pdf, subPixelArray, PLATE_WIDTH, filteredAvailableStudHexList, PRINT_SCALING,
+                i + 1, selectedPixelPartNumber, variablePixelPieceDimensionsForPage,
+                pdfWidth, pdfHeight, isHighQuality, JPEG_QUALITY_PAGES, null, null,
+                BK_OVERVIEW_MAX_PX, BK_OVERVIEW_JPEG_Q);
+        }
 
         // Detail sub-pages: split the plate into BLOCK_SIZE × BLOCK_SIZE blocks.
         const blocksPerSide = PLATE_WIDTH / BLOCK_SIZE;
@@ -2866,11 +2874,12 @@ async function generateInstructions() {
         // Render one page (plate overview or 16x16 detail) into the current pdf.
         // overviewContext (optional): { fullPlateArray, plateWidth, blockCol, blockRow, blockSize }
         // triggers a small thumbnail with the current block highlighted.
-        // Hybrid: detail pages (they carry an overviewContext) → vector; dense
-        // plate-overview pages (no overviewContext) → raster JPEG. Keeps the file
-        // small + viewer-friendly and lets compression stay on safely.
+        // ALL geometry pages → vector (both dense plate-overviews AND 16×16 detail
+        // blocks). Crisp at any zoom, no pixelation. Safe now that jsPDF 2.x's deflate
+        // compresses the dense ~2300-stud overview stream correctly (jsPDF 1.5.3's
+        // flate corrupted it → blank pages, which forced overviews to raster JPEG).
         const renderPageToPdf = (pixelArrayForPage, plateWidthForPage, label, variableDims, overviewContext, scalingOverride, legendScalingOverride) => {
-            if (useVector && overviewContext) {
+            if (useVector) {
                 bkDrawInstructionPageVector(
                     pdf,
                     pixelArrayForPage,
@@ -2952,6 +2961,7 @@ async function generateInstructions() {
                 width: PLATE_WIDTH,
                 label: i + 1,
                 variableDims: variablePixelPieceDimensionsForPage,
+                legendScalingOverride: PRINT_SCALING,
             });
             // Detail sub-pages (only if plate cleanly divides into 16×16 blocks)
             const blocksPerSide = PLATE_WIDTH / BLOCK_SIZE;
