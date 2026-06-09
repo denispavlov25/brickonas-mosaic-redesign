@@ -425,7 +425,7 @@
       }
 
       .mosaic-control-body {
-        padding: 0 16px 16px;
+        padding: 16px 16px 18px;
       }
 
       .mosaic-control-body .form-label {
@@ -437,7 +437,7 @@
 
       .mosaic-control-body input[type="range"] {
         width: 100%;
-        margin: 4px 0;
+        margin: 4px 0 14px;
         accent-color: var(--bk-green-primary);
       }
 
@@ -702,8 +702,19 @@
         justify-content: space-between;
         align-items: center;
         font-size: 0.85rem;
-        color: var(--bk-dark-gray);
-        margin-bottom: 2px;
+        font-weight: 600;
+        color: var(--bk-near-black);
+        margin-bottom: 8px;
+      }
+
+      /* spacing for the Schrittweite select groups in the resolution panel */
+      .mosaic-step-field { margin-bottom: 4px; }
+
+      /* clear separation between the Breite and Höhe groups */
+      .mosaic-res-divider {
+        margin-top: 20px;
+        padding-top: 18px;
+        border-top: 1px solid var(--bk-light-gray);
       }
 
       .mosaic-slider-label span:last-child {
@@ -826,8 +837,8 @@
         flex-wrap: wrap;
       }
       .mosaic-product-price {
-        font-size: 1.5rem;
-        font-weight: 800;
+        font-size: 1.6rem;
+        font-weight: 700;
         color: var(--bk-green-primary);
         font-family: var(--bk-font-heading);
       }
@@ -1507,21 +1518,21 @@
                               <span id="width-text">48</span>
                             </div>
                             <input type="range" id="width-slider" min="48" max="288" step="48" value="48" />
-                            <div style="margin-bottom: 8px;">
-                              <label style="font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepWidth">Schrittweite Breite:</label>
+                            <div class="mosaic-step-field">
+                              <label style="display:block; margin-bottom:5px; font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepWidth">Schrittweite Breite:</label>
                               <select id="width-step-select">
                                 <option value="32">32</option>
                                 <option value="48" selected>48</option>
                               </select>
                             </div>
 
-                            <div class="mosaic-slider-label" style="margin-top: 12px;">
+                            <div class="mosaic-slider-label mosaic-res-divider">
                               <span data-i18n="height">Höhe:</span>
                               <span id="height-text">48</span>
                             </div>
                             <input type="range" id="height-slider" min="48" max="288" step="48" value="48" />
-                            <div>
-                              <label style="font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepHeight">Schrittweite Höhe:</label>
+                            <div class="mosaic-step-field">
+                              <label style="display:block; margin-bottom:5px; font-size: 0.8rem; color: var(--bk-dark-gray);" data-i18n="resolutionStepHeight">Schrittweite Höhe:</label>
                               <select id="height-step-select">
                                 <option value="32">32</option>
                                 <option value="48" selected>48</option>
