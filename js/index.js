@@ -163,20 +163,12 @@ if (window.location.href.includes("forceUnsupportedDimensions")) {
     });
 }
 
-const CNN_INPUT_IMAGE_WIDTH = 256;
-const CNN_INPUT_IMAGE_HEIGHT = 256;
-
 let inputImage = null;
 
 const inputCanvas = document.getElementById("input-canvas");
 const inputCanvasContext = inputCanvas.getContext("2d");
 const inputDepthCanvas = document.getElementById("input-depth-canvas");
 const inputDepthCanvasContext = inputDepthCanvas.getContext("2d");
-
-const webWorkerInputCanvas = document.getElementById("web-worker-input-canvas");
-const webWorkerInputCanvasContext = webWorkerInputCanvas.getContext("2d");
-const webWorkerOutputCanvas = document.getElementById("web-worker-output-canvas");
-const webWorkerOutputCanvasContext = webWorkerOutputCanvas.getContext("2d");
 
 const step1CanvasUpscaled = document.getElementById("step-1-canvas-upscaled");
 const step1CanvasUpscaledContext = step1CanvasUpscaled.getContext("2d");
@@ -3533,67 +3525,12 @@ document.getElementById("export-depth-to-bricklink-button").addEventListener("cl
 });
 
 function triggerDepthMapGeneration() {
+    // Auto-generation (the old CNN-based depth-map Web Worker) is not shipped in
+    // this build — js/depth-map-web-worker.js does not exist. Users supply their
+    // own depth image via the "Tiefenkarte hochladen" file picker instead. The
+    // former worker pipeline (canvas → CNN → depth canvas → runStep1) was dead
+    // code behind this early return and has been removed.
     alert("Depth map auto-generation is not available. Please upload your own depth map image.");
-    return;
-    disableInteraction();
-    const worker = new Worker("js/depth-map-web-worker.js");
-
-    const loadingMessageComponent = document.getElementById("web-worker-loading-message");
-    loadingMessageComponent.hidden = false;
-
-    webWorkerInputCanvas.width = CNN_INPUT_IMAGE_WIDTH;
-    webWorkerInputCanvas.height = CNN_INPUT_IMAGE_HEIGHT;
-    webWorkerInputCanvasContext.drawImage(
-        inputImage,
-        0,
-        0,
-        inputImage.width,
-        inputImage.height,
-        0,
-        0,
-        CNN_INPUT_IMAGE_WIDTH,
-        CNN_INPUT_IMAGE_HEIGHT
-    );
-    setTimeout(() => {
-        const inputPixelArray = getPixelArrayFromCanvas(webWorkerInputCanvas);
-        worker.postMessage({
-            inputPixelArray,
-        });
-
-        worker.addEventListener("message", (e) => {
-            const { result, loadingMessage } = e.data;
-            if (result != null) {
-                webWorkerOutputCanvas.width = CNN_INPUT_IMAGE_WIDTH;
-                webWorkerOutputCanvas.height = CNN_INPUT_IMAGE_HEIGHT;
-                drawPixelsOnCanvas(result, webWorkerOutputCanvas);
-                setTimeout(() => {
-                    inputDepthCanvas.width = SERIALIZE_EDGE_LENGTH;
-                    inputDepthCanvas.height = SERIALIZE_EDGE_LENGTH;
-                    inputDepthCanvasContext.drawImage(
-                        webWorkerOutputCanvas,
-                        0,
-                        0,
-                        CNN_INPUT_IMAGE_WIDTH,
-                        CNN_INPUT_IMAGE_HEIGHT,
-                        0,
-                        0,
-                        SERIALIZE_EDGE_LENGTH,
-                        SERIALIZE_EDGE_LENGTH
-                    );
-                    setTimeout(() => {
-                        loadingMessageComponent.hidden = true;
-                        enableInteraction();
-                        overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
-                        runStep1();
-                    }, 50); // TODO: find better way to check that input is finished
-                }, 50); // TODO: find better way to check that input is finished
-            } else if (loadingMessage != null) {
-                loadingMessageComponent.innerHTML = loadingMessage;
-            } else {
-                console.log("Message from web worker: ", e.data);
-            }
-        });
-    }, 50); // TODO: find better way to check that input is finished
 }
 
 var generateDepthBtn = document.getElementById("generate-depth-image");
