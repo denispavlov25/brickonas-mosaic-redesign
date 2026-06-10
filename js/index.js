@@ -4426,9 +4426,20 @@ function goToStep(stepNumber) {
         return true;
     }
 
-    // Render each style tile as a real mini-mosaic preview using the same
-    // alignPixelsToStudMap logic the full pipeline uses, but with the
-    // tile's own palette.
+    // Render each style tile as a mini-mosaic preview of its own palette.
+    //
+    // PERF / UX: this used to color-match all 5 tiles synchronously in one loop
+    // right as step 2 appeared, producing a single ~300-400 ms main-thread block
+    // exactly when the user reaches to hover a tile — so the lift animation
+    // stuttered or never started. Two changes keep the thread responsive:
+    //   1. Render ONE tile per animation frame (yield between tiles) so hover
+    //      and paint can run in the gaps.
+    //   2. Use the cheap Euclidean-LAB metric for these 32px decorative
+    //      thumbnails instead of the full CIEDE2000 the real mosaic uses. The
+    //      colour choice is visually indistinguishable at this size but several
+    //      times faster, so each per-frame chunk stays small.
+    // The real product mosaic is unaffected — it still uses colorDistanceFunction.
+    var previewRenderToken = 0;
     function renderTilePreviews() {
         var src = document.getElementById("step-2-canvas");
         if (!src || !src.width || !src.height) {
@@ -4444,45 +4455,53 @@ function goToStep(stepNumber) {
         tmpCtx.imageSmoothingEnabled = true;
         tmpCtx.drawImage(src, 0, 0, GRID, GRID);
         var basePixels = tmpCtx.getImageData(0, 0, GRID, GRID).data;
-        var distFn = (typeof colorDistanceFunction !== "undefined") ? colorDistanceFunction : null;
+        var distFn =
+            (colorDistanceFunctionsInfo.euclideanLAB && colorDistanceFunctionsInfo.euclideanLAB.func) ||
+            (typeof colorDistanceFunction !== "undefined" ? colorDistanceFunction : null);
         var canMatch = distFn && typeof alignPixelsToStudMap === "function";
 
-        var tiles = grid.querySelectorAll(".bk-style-tile");
-        tiles.forEach(function(tile) {
+        var tiles = [].slice.call(grid.querySelectorAll(".bk-style-tile"));
+        var token = ++previewRenderToken; // a newer render invalidates this one
+        var idx = 0;
+
+        function renderOne() {
+            if (token !== previewRenderToken) return; // superseded by a newer render
+            if (idx >= tiles.length) return;
+            var tile = tiles[idx++];
             var preset = BK_STYLE_PRESETS.find(function(p) { return p.id === tile.dataset.style; });
-            if (!preset) return;
             var canvas = tile.querySelector("canvas.bk-style-tile-preview");
-            if (!canvas) return;
+            if (preset && canvas) {
+                var paletteMap;
+                if (preset.id === "original") {
+                    paletteMap = originalPaletteSnapshot || selectedStudMap;
+                } else {
+                    paletteMap = buildStudMapFromHexList(BK_STYLE_PALETTES[preset.id] || []);
+                }
+                if (paletteMap && Object.keys(paletteMap).length > 0) {
+                    var pix = new Uint8ClampedArray(basePixels);
+                    var aligned = canMatch ? alignPixelsToStudMap(pix, paletteMap, distFn) : pix;
 
-            // Pick the palette for this tile.
-            var paletteMap;
-            if (preset.id === "original") {
-                paletteMap = originalPaletteSnapshot || selectedStudMap;
-            } else {
-                paletteMap = buildStudMapFromHexList(BK_STYLE_PALETTES[preset.id] || []);
+                    canvas.width = GRID * DOT;
+                    canvas.height = GRID * DOT;
+                    var ctx = canvas.getContext("2d");
+                    ctx.fillStyle = "#222";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    var radius = DOT / 2;
+                    for (var i = 0; i < GRID * GRID; i++) {
+                        var r = aligned[i * 4], g = aligned[i * 4 + 1], b = aligned[i * 4 + 2];
+                        ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+                        var x = (i % GRID) * DOT + radius;
+                        var y = Math.floor(i / GRID) * DOT + radius;
+                        ctx.beginPath();
+                        ctx.arc(x, y, radius - 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
             }
-            if (!paletteMap || Object.keys(paletteMap).length === 0) return;
-
-            // Color-match the tile's pixels against this palette.
-            var pix = new Uint8ClampedArray(basePixels);
-            var aligned = canMatch ? alignPixelsToStudMap(pix, paletteMap, distFn) : pix;
-
-            canvas.width = GRID * DOT;
-            canvas.height = GRID * DOT;
-            var ctx = canvas.getContext("2d");
-            ctx.fillStyle = "#222";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            var radius = DOT / 2;
-            for (var i = 0; i < GRID * GRID; i++) {
-                var r = aligned[i * 4], g = aligned[i * 4 + 1], b = aligned[i * 4 + 2];
-                ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-                var x = (i % GRID) * DOT + radius;
-                var y = Math.floor(i / GRID) * DOT + radius;
-                ctx.beginPath();
-                ctx.arc(x, y, radius - 0.3, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        });
+            // Yield to the event loop between tiles so hover/paint stay smooth.
+            requestAnimationFrame(renderOne);
+        }
+        renderOne();
     }
 
     function buildTilesOnce() {
