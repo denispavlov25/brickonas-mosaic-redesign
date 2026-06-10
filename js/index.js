@@ -754,9 +754,33 @@ INTERPOLATION_ALGORITHMS.forEach((algorithm) => {
 });
 
 // Color distance stuff
+//
+// PERF: the d3 difference metrics (esp. CIEDE2000) internally convert each input
+// to CIELAB. The hot path (alignPixelsToStudMap / dithering on step 3) calls the
+// distance fn millions of times, but only ~20 palette colors and a bounded set of
+// input colors ever appear. We memoize the per-color RGB→LAB conversion so each
+// distinct color is converted once instead of on every comparison.
+//
+// SAFETY: every caller passes integer RGB channels in [0,255]:
+//   - canvas pixels (Uint8ClampedArray) are integers,
+//   - palette colors come from hexToRgb(...) (integers),
+//   - dithering error-diffused pixels are run through clamp255() which Math.round()s.
+// So the (r<<16)|(g<<8)|b cache key is exact and the output is byte-identical to the
+// previous d3.color(rgbToHex(...)) path (verified A/B: 0 mismatched channels).
 function d3ColorDistanceWrapper(d3DistanceFunction) {
-    return (c1, c2) =>
-        d3DistanceFunction(d3.color(rgbToHex(c1[0], c1[1], c1[2])), d3.color(rgbToHex(c2[0], c2[1], c2[2])));
+    const labCache = new Map();
+    function toLab(p) {
+        const key = (p[0] << 16) | (p[1] << 8) | p[2];
+        let c = labCache.get(key);
+        if (c === undefined) {
+            // Bound memory across very large images (key space is 16.7M max).
+            if (labCache.size > 300000) labCache.clear();
+            c = d3.lab(d3.rgb(p[0], p[1], p[2]));
+            labCache.set(key, c);
+        }
+        return c;
+    }
+    return (c1, c2) => d3DistanceFunction(toLab(c1), toLab(c2));
 }
 
 function RGBPixelDistanceSquared(pixel1, pixel2) {
