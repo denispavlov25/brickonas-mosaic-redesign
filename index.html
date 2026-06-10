@@ -176,76 +176,6 @@
 
       .mosaic-card-compact { padding: 24px; }
 
-      /* === AI ENHANCE PANEL (step 1) === */
-      .bk-enhance-panel {
-        margin-top: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .bk-enhance-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 10px;
-      }
-      .bk-enhance-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 11px 22px;
-        border: none;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #33913A, #1B5E20);
-        color: #fff;
-        font-weight: 700;
-        font-size: 0.95rem;
-        cursor: pointer;
-        transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
-        box-shadow: 0 4px 14px rgba(27, 94, 32, .25);
-      }
-      .bk-enhance-btn:hover:not(:disabled) {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 18px rgba(27, 94, 32, .32);
-      }
-      .bk-enhance-btn:disabled {
-        opacity: .6;
-        cursor: default;
-      }
-      .bk-enhance-undo {
-        padding: 9px 16px;
-        border: 1px solid var(--bk-light-gray, #ddd);
-        border-radius: 10px;
-        background: #fff;
-        color: var(--bk-dark-gray, #555);
-        font-size: 0.85rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background .12s ease, border-color .12s ease;
-      }
-      .bk-enhance-undo:hover {
-        background: #f4f4f2;
-        border-color: #ccc;
-      }
-      .bk-enhance-check {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--bk-dark-gray, #555);
-        cursor: pointer;
-        user-select: none;
-      }
-      .bk-enhance-check input { cursor: pointer; }
-      .bk-enhance-status {
-        font-size: 0.82rem;
-        color: var(--bk-dark-gray, #555);
-        min-height: 1.1em;
-      }
-      .bk-enhance-status.is-busy { color: #1B5E20; }
-      .bk-enhance-status.is-error { color: #c0392b; }
-
       /* === UPLOAD AREA === */
       .mosaic-upload-area {
         text-align: center;
@@ -1654,20 +1584,6 @@
                     <div class="mosaic-canvas-area">
                       <canvas id="step-1-canvas-upscaled" style="" class="cropper-img"></canvas>
                     </div>
-
-                    <!-- AI / smart image enhancement (step 1) -->
-                    <div id="bk-enhance-panel" class="bk-enhance-panel">
-                      <div class="bk-enhance-row">
-                        <button type="button" id="bk-enhance-btn" class="bk-enhance-btn" data-i18n="enhanceBtn">&#x2728; Für Mosaik optimieren</button>
-                        <button type="button" id="bk-enhance-undo" class="bk-enhance-undo" hidden data-i18n="enhanceUndo">Original wiederherstellen</button>
-                      </div>
-                      <label class="bk-enhance-check">
-                        <input type="checkbox" id="bk-enhance-bgremove" />
-                        <span data-i18n="enhanceBgRemove">Hintergrund entfernen (KI)</span>
-                      </label>
-                      <div id="bk-enhance-status" class="bk-enhance-status" role="status" aria-live="polite"></div>
-                    </div>
-
                     <div id="image-input-new" style="margin-top: 12px;"></div>
                   </div>
 
@@ -2128,10 +2044,10 @@
     <script src="js/bricklink-colors.js?v=1"></script>
     <script src="js/stud-maps.js?v=1"></script>
     <script src="js/heap.js"></script>
-    <script src="js/i18n.js?v=28"></script>
+    <script src="js/i18n.js?v=27"></script>
     <script src="js/algo.js?v=28"></script>
     <script src="js/instructions-vector.js?v=1"></script>
-    <script src="js/index.js?v=58"></script>
+    <script src="js/index.js?v=57"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing
