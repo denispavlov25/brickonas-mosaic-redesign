@@ -29,9 +29,10 @@
 var BK_WORKER_READY = false;
 
 try {
-    // Same scripts the page loads (index.html). Loading the identical bundles is
-    // what makes the worker's CIEDE2000 result byte-identical to the main thread.
-    importScripts("https://d3js.org/d3.v5.js", "https://cdn.jsdelivr.net/npm/d3-color-difference");
+    // Same (self-hosted) scripts the page loads (index.html). Loading the identical
+    // bundles is what makes the worker's CIEDE2000 result byte-identical to the main
+    // thread. Paths are relative to this worker file (js/), i.e. js/vendor/*.
+    importScripts("vendor/d3.v5.min.js", "vendor/d3-color-difference-0.1.3.min.js");
     BK_WORKER_READY = typeof d3 !== "undefined" && typeof d3.differenceCiede2000 === "function";
 } catch (e) {
     BK_WORKER_READY = false;

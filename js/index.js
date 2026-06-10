@@ -1641,7 +1641,7 @@ function bkGetAlignWorker() {
         return null;
     }
     try {
-        _bkAlignWorker = new Worker("js/mosaic-align-worker.js?v=55");
+        _bkAlignWorker = new Worker("js/mosaic-align-worker.js?v=56");
     } catch (e) {
         _bkAlignWorkerBroken = true;
         return null;

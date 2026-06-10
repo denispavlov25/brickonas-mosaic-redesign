@@ -1,0 +1,19 @@
+/* BRICKONAS self-hosted fonts (Nunito + Fredoka).
+   Replaces the render-blocking, GDPR-sensitive fonts.googleapis.com /
+   fonts.gstatic.com requests with local variable woff2 files. The Latin
+   subset fully covers German (incl. ä ö ü ß). Both faces are variable
+   fonts, so one file per family serves weights 400-700 via the wght axis. */
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(../../fonts/nunito.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(../../fonts/fredoka.woff2) format('woff2');
+}
