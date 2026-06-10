@@ -3654,6 +3654,8 @@ function handleInputImage(e, dontClearDepth, dontLog) {
             overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
             initializeCropper();
             runStep1();
+            // Reset the AI-enhance panel for the freshly loaded image
+            if (window.bkEnhanceReset) window.bkEnhanceReset(inputImage.src);
         };
         inputImage.src = event.target.result;
         // Show visual step 1 and stepper
@@ -3677,6 +3679,249 @@ function handleInputImage(e, dontClearDepth, dontLog) {
     };
     reader.readAsDataURL(e.target.files[0]);
 }
+
+/* ============================================================
+ * AI / SMART IMAGE ENHANCEMENT (Step 1)
+ * ------------------------------------------------------------
+ * Variant A (always): algorithmic enhance — luminance percentile
+ *   auto-contrast, gentle saturation boost, unsharp mask. Runs
+ *   fully on the client, fast, no network.
+ * Variant B (opt-in checkbox): on-device AI background removal via
+ *   @imgly/background-removal (lazy ESM import, ONNX in-browser),
+ *   composited onto a neutral background, then enhanced.
+ * The result replaces the global `inputImage` and re-runs the
+ * step-1 pipeline. "Original wiederherstellen" restores the
+ * unmodified upload. Paid mosaic output is unaffected — this only
+ * changes the source image the user explicitly chose to optimize.
+ * ============================================================ */
+const BK_BGREMOVAL_ESM = "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm";
+
+function bkLoadImage(src) {
+    return new Promise(function (resolve, reject) {
+        const im = new Image();
+        im.onload = function () { resolve(im); };
+        im.onerror = reject;
+        im.src = src;
+    });
+}
+
+// 3x3 separable box blur over RGB; returns a Uint8ClampedArray.
+function bkBoxBlur(d, w, h) {
+    const tmp = new Float32Array(d.length);
+    const out = new Uint8ClampedArray(d.length);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            for (let c = 0; c < 3; c++) {
+                let sum = d[idx + c], cnt = 1;
+                if (x > 0) { sum += d[idx - 4 + c]; cnt++; }
+                if (x < w - 1) { sum += d[idx + 4 + c]; cnt++; }
+                tmp[idx + c] = sum / cnt;
+            }
+            tmp[idx + 3] = d[idx + 3];
+        }
+    }
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            for (let c = 0; c < 3; c++) {
+                let sum = tmp[idx + c], cnt = 1;
+                if (y > 0) { sum += tmp[idx - w * 4 + c]; cnt++; }
+                if (y < h - 1) { sum += tmp[idx + w * 4 + c]; cnt++; }
+                out[idx + c] = sum / cnt;
+            }
+            out[idx + 3] = 255;
+        }
+    }
+    return out;
+}
+
+// Algorithmic enhance. Accepts an Image or canvas, returns a canvas.
+function bkEnhanceToCanvas(src) {
+    const sw = src.naturalWidth || src.width;
+    const sh = src.naturalHeight || src.height;
+    const maxSide = 1024;
+    const scale = Math.min(1, maxSide / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d");
+    ctx.drawImage(src, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const n = d.length;
+
+    // --- auto-contrast: luminance percentile stretch (same lo/hi for
+    //     all channels so we don't introduce a color cast) ---
+    const hist = new Float64Array(256);
+    for (let i = 0; i < n; i += 4) {
+        const lum = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+        hist[lum]++;
+    }
+    const total = n / 4;
+    const loCut = total * 0.005, hiCut = total * 0.995;
+    let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= loCut) { lo = v; break; } }
+    acc = 0;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= hiCut) { hi = v; break; } }
+    if (hi <= lo) { lo = 0; hi = 255; }
+    const range = hi - lo;
+    const sat = 1.18;
+    const clamp = function (x) { return x < 0 ? 0 : x > 255 ? 255 : x; };
+    for (let j = 0; j < n; j += 4) {
+        let r = (d[j] - lo) * 255 / range;
+        let g = (d[j + 1] - lo) * 255 / range;
+        let b = (d[j + 2] - lo) * 255 / range;
+        r = clamp(r); g = clamp(g); b = clamp(b);
+        const l = 0.299 * r + 0.587 * g + 0.114 * b;
+        r = l + (r - l) * sat; g = l + (g - l) * sat; b = l + (b - l) * sat;
+        d[j] = clamp(r); d[j + 1] = clamp(g); d[j + 2] = clamp(b);
+    }
+
+    // --- unsharp mask ---
+    const blurred = bkBoxBlur(d, w, h);
+    const amount = 0.8;
+    for (let k = 0; k < n; k += 4) {
+        for (let c = 0; c < 3; c++) {
+            const o = d[k + c];
+            d[k + c] = clamp(o + amount * (o - blurred[k + c]));
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return cv;
+}
+
+// Opt-in AI background removal → composite onto neutral bg → canvas.
+async function bkRemoveBackground(srcUrl) {
+    const mod = await import(/* webpackIgnore: true */ BK_BGREMOVAL_ESM);
+    const remove = mod.removeBackground || (mod.default && mod.default.removeBackground);
+    if (typeof remove !== "function") throw new Error("removeBackground export not found");
+    const blob = await remove(srcUrl);
+    const url = URL.createObjectURL(blob);
+    try {
+        const fg = await bkLoadImage(url);
+        const cv = document.createElement("canvas");
+        cv.width = fg.naturalWidth || fg.width;
+        cv.height = fg.naturalHeight || fg.height;
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#f2f2ef";
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(fg, 0, 0);
+        return cv;
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
+// Replace the global inputImage with `img` and re-run the step-1
+// pipeline (mirrors handleInputImage's onload body). Tries to keep
+// the current crop selection.
+function bkApplySourceImage(img, preserveCrop) {
+    let savedData = null;
+    if (preserveCrop && inputImageCropper != null && typeof inputImageCropper.getData === "function") {
+        try { savedData = inputImageCropper.getData(); } catch (e) { savedData = null; }
+    }
+    inputImage = img;
+    inputCanvas.width = SERIALIZE_EDGE_LENGTH;
+    inputCanvas.height = SERIALIZE_EDGE_LENGTH;
+    inputCanvasContext.drawImage(
+        inputImage, 0, 0, inputImage.width, inputImage.height,
+        0, 0, SERIALIZE_EDGE_LENGTH, SERIALIZE_EDGE_LENGTH
+    );
+    const px = getPixelArrayFromCanvas(inputCanvas);
+    for (let i = 3; i < px.length; i += 4) px[i] = 255;
+    drawPixelsOnCanvas(px, inputCanvas);
+
+    step1CanvasUpscaled.width = SERIALIZE_EDGE_LENGTH;
+    step1CanvasUpscaled.height = Math.floor((SERIALIZE_EDGE_LENGTH * inputImage.height) / inputImage.width);
+    step1CanvasUpscaledContext.drawImage(
+        inputCanvas, 0, 0, SERIALIZE_EDGE_LENGTH, SERIALIZE_EDGE_LENGTH,
+        0, 0, step1CanvasUpscaled.width, step1CanvasUpscaled.height
+    );
+
+    overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    initializeCropper();
+    if (savedData != null && inputImageCropper != null && typeof inputImageCropper.setData === "function") {
+        try { inputImageCropper.setData(savedData); } catch (e) { /* crop reset is acceptable */ }
+    }
+    runStep1();
+}
+
+(function bkEnhanceModule() {
+    const btn = document.getElementById("bk-enhance-btn");
+    if (!btn) return;
+    const undoBtn = document.getElementById("bk-enhance-undo");
+    const bgCheck = document.getElementById("bk-enhance-bgremove");
+    const statusEl = document.getElementById("bk-enhance-status");
+    let originalSrc = null;
+
+    function setStatus(msg, cls) {
+        if (!statusEl) return;
+        statusEl.textContent = msg || "";
+        statusEl.className = "bk-enhance-status" + (cls ? " " + cls : "");
+    }
+
+    // Called by handleInputImage whenever a new image is loaded.
+    window.bkEnhanceReset = function (src) {
+        originalSrc = src;
+        if (undoBtn) undoBtn.hidden = true;
+        if (bgCheck) bgCheck.checked = false;
+        btn.disabled = false;
+        setStatus("");
+    };
+
+    btn.addEventListener("click", async function () {
+        if (!inputImage) return;
+        btn.disabled = true;
+        try {
+            let source = inputImage;
+            if (bgCheck && bgCheck.checked) {
+                setStatus(t("enhanceBgBusy"), "is-busy");
+                await new Promise(function (r) { setTimeout(r, 30); });
+                try {
+                    source = await bkRemoveBackground(inputImage.src);
+                } catch (err) {
+                    console.warn("Background removal failed:", err);
+                    setStatus(t("enhanceBgFailed"), "is-error");
+                    source = inputImage;
+                    await new Promise(function (r) { setTimeout(r, 900); });
+                }
+            }
+            setStatus(t("enhanceBusy"), "is-busy");
+            await new Promise(function (r) { setTimeout(r, 30); });
+            const enhancedCanvas = bkEnhanceToCanvas(source);
+            const dataUrl = enhancedCanvas.toDataURL("image/png");
+            const newImg = await bkLoadImage(dataUrl);
+            bkApplySourceImage(newImg, true);
+            if (undoBtn) undoBtn.hidden = false;
+            setStatus(t("enhanceDone"), "");
+        } catch (e) {
+            console.error("Enhance failed:", e);
+            setStatus(t("enhanceError"), "is-error");
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    if (undoBtn) {
+        undoBtn.addEventListener("click", async function () {
+            if (!originalSrc) return;
+            undoBtn.disabled = true;
+            try {
+                const img = await bkLoadImage(originalSrc);
+                bkApplySourceImage(img, true);
+                undoBtn.hidden = true;
+                setStatus("");
+            } catch (e) {
+                console.error("Restore original failed:", e);
+            } finally {
+                undoBtn.disabled = false;
+            }
+        });
+    }
+})();
 
 function handleInputDepthMapImage(e) {
     const reader = new FileReader();

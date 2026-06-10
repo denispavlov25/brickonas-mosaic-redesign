@@ -223,6 +223,16 @@ const translations = {
         inputPiecesTooltip: "Dies kann auch später Teil für Teil geändert oder angepasst werden",
         selectInputImage: "Eingabebild auswählen",
         reselectInputImage: "Eingabebild erneut auswählen",
+
+        // AI / smart image enhancement (Step 1)
+        enhanceBtn: "✨ Für Mosaik optimieren",
+        enhanceUndo: "Original wiederherstellen",
+        enhanceBgRemove: "Hintergrund entfernen (KI)",
+        enhanceBusy: "Bild wird optimiert …",
+        enhanceBgBusy: "Hintergrund wird entfernt … (kann etwas dauern)",
+        enhanceBgFailed: "Hintergrund konnte nicht entfernt werden – Bild wird trotzdem optimiert.",
+        enhanceDone: "Fertig! Dein Bild wurde fürs Mosaik optimiert.",
+        enhanceError: "Optimierung fehlgeschlagen. Bitte versuche es erneut.",
         seeAnExample: "Beispiel ansehen",
         orTryExample: "Oder probiere ein Beispielbild",
         dsTitle: "Designservice",
