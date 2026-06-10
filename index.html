@@ -971,9 +971,37 @@
       }
       .mosaic-order-status.bk-sending {
         display: block;
+        position: relative;
+        overflow: hidden;
+        padding-bottom: 14px;
         background: #E3F2FD;
         border: 1px solid #90CAF9;
         color: #1565C0;
+      }
+      /* Animated indeterminate progress bar pinned to the bottom of the blue
+         "in progress" toast. The order flow is async (generate PDF → upload →
+         add to cart) and can take several seconds with nothing else moving on
+         screen, so this gives the customer continuous "still working" feedback
+         instead of a static box that looks frozen. Composited transform → keeps
+         sliding even while the main thread is briefly busy. */
+      .mosaic-order-status.bk-sending::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 3px;
+        width: 38%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, rgba(25,118,210,0), #1976D2 50%, rgba(25,118,210,0));
+        will-change: transform;
+        animation: bk-order-bar 1.15s ease-in-out infinite;
+      }
+      @keyframes bk-order-bar {
+        0%   { transform: translateX(-110%); }
+        100% { transform: translateX(365%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .mosaic-order-status.bk-sending::after { animation-duration: 2.4s; }
       }
       .mosaic-order-status.bk-sent {
         display: block;
@@ -1304,6 +1332,14 @@
          "show-spinner" is added — this lets quick operations finish without ever
          flashing the loader, while heavy steps (high resolutions) show it clearly. */
       #loading-overlay.show-spinner { opacity: 1; pointer-events: all; }
+
+      /* Heavy steps (high resolutions) reveal the loader INSTANTLY — no fade-in —
+         so it is already fully opaque on screen before the main thread freezes for
+         the synchronous compute. Without this the overlay is caught mid-transition
+         (~15% opacity) when the freeze hits, so the user sees the page "hang" with
+         no visible loader for a beat before AND after the spinner. */
+      #loading-overlay.bk-instant { transition: none; }
+      #loading-overlay.bk-instant .bk-loader-card { transition: none; }
 
       .bk-loader-card {
         display: flex;
@@ -2011,7 +2047,7 @@
     <script src="js/i18n.js?v=27"></script>
     <script src="js/algo.js?v=27"></script>
     <script src="js/instructions-vector.js?v=1"></script>
-    <script src="js/index.js?v=50"></script>
+    <script src="js/index.js?v=51"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing

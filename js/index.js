@@ -109,12 +109,17 @@ function disableInteraction(opts) {
     overlay.classList.remove("hidden");
     if (_loadingSpinnerTimeout) { clearTimeout(_loadingSpinnerTimeout); _loadingSpinnerTimeout = null; }
     if (opts.immediate) {
-        // Force a reflow so the fade/scale-in transition runs, then show now.
+        // Heavy op: show the loader INSTANTLY at full opacity (bk-instant kills the
+        // fade-in transition) so it is fully painted before the main-thread freeze.
+        // A reflow commits the style, then the double-rAF in bkPaintThenRun gives the
+        // browser one clean paint of the opaque loader before the compute blocks.
+        overlay.classList.add("bk-instant");
         void overlay.offsetWidth;
         overlay.classList.add("show-spinner");
     } else {
         // Light op: only reveal the loader if it ends up taking longer than a
         // few hundred ms, so quick slider tweaks never flash it.
+        overlay.classList.remove("bk-instant");
         overlay.classList.remove("show-spinner");
         _loadingSpinnerTimeout = setTimeout(function () {
             if (!overlay.classList.contains("hidden")) {
@@ -141,6 +146,7 @@ function enableInteraction() {
     const overlay = document.getElementById("loading-overlay");
     overlay.classList.add("hidden");
     overlay.classList.remove("show-spinner");
+    overlay.classList.remove("bk-instant");
     if (_loadingSpinnerTimeout) {
         clearTimeout(_loadingSpinnerTimeout);
         _loadingSpinnerTimeout = null;
@@ -1661,7 +1667,11 @@ function _runStep3Body() {
 
     setTimeout(() => {
         stepProcessed[3] = true;
-        enableInteraction();
+        // Keep the loader up THROUGH the heavy upscale render below, then hide it.
+        // Previously enableInteraction() ran first, so the overlay vanished and the
+        // page then froze again during drawStudImageOnCanvas (the upscale at high
+        // resolution) with nothing on screen — the "hang after the loader disappears"
+        // the customer reported. Hiding only after the draws keeps the freeze covered.
         try {
             step3CanvasUpscaledContext.imageSmoothingEnabled = false;
             drawStudImageOnCanvas(
@@ -1692,6 +1702,8 @@ function _runStep3Body() {
         } catch (err) {
             console.error("runStep3 async error:", err);
         }
+        // Hide the loader only now that the heavy upscale render is done and painted.
+        enableInteraction();
     }, 1);
 }
 
