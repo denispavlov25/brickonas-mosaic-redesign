@@ -67,6 +67,9 @@
   // recomputed from it on every change so toggles are composable/reversible.
   var state = {
     baseCanvas: null,
+    objectLayer: null,  // pristine base WITH baked object edits (remove/recolor a
+                        // named object). null = no object edits yet. recompute()
+                        // starts from this when present, so other ops stack on top.
     optimized: false,
     grayscale: false,
     brightness: 0, // accumulated delta from chat "heller"/"dunkler"
@@ -78,6 +81,12 @@
     bgMask: null,       // cached ML foreground mask {data:Uint8Array, w, h} or null
     bgMaskTried: false  // we already attempted ML segmentation for this image
   };
+
+  // The pristine source every recompute() builds on: the photo AFTER any baked
+  // object edits if present, else the original crop. Keeping object edits in a
+  // separate layer (instead of mutating baseCanvas) means Reset can still restore
+  // the true original, and the slow detect→segment pass runs once, not per render.
+  function workBase() { return state.objectLayer || state.baseCanvas; }
 
   // window.bkAi is the bridge read by _runStep2Body in index.js.
   window.bkAi = window.bkAi || { sourceCanvas: null };
@@ -529,10 +538,11 @@
       // box has collapsed to 0x0 (step 1 is hidden), so letting _runStep2Body fall
       // back to inputImageCropper.getCroppedCanvas() would re-render a broken crop
       // — that's the "reset/toggle-off only partly restores the original" bug.
-      // Rendering from baseCanvas guarantees a true, complete revert.
-      window.bkAi.sourceCanvas = cloneCanvas(state.baseCanvas);
+      // workBase() = baseCanvas, or the object-edited layer if the user removed /
+      // recoloured a named object (which must survive with no other ops active).
+      window.bkAi.sourceCanvas = cloneCanvas(workBase());
     } else {
-      var work = cloneCanvas(state.baseCanvas);
+      var work = cloneCanvas(workBase());
       if (state.optimized) autoEnhance(work);
       if (state.grayscale) desaturate(work);
       if (state.brightness) applyBrightness(work, state.brightness);
@@ -637,6 +647,7 @@
     state.brightness = 0;
     state.recolors = [];
     state.boosts = [];
+    state.objectLayer = null; // drop baked object edits → back to the true original
     state.bgRemoved = false;
     state.bgColor = "#ffffff";
     // Keep state.bgMask: the photo is unchanged, so a re-toggle of "remove
@@ -661,6 +672,7 @@
     state.brightness = 0;
     state.recolors = [];
     state.boosts = [];
+    state.objectLayer = null;  // new image → drop baked object edits
     state.bgRemoved = false;
     state.bgColor = "#ffffff";
     state.bgMask = null;       // new image → previous ML mask is invalid
@@ -737,6 +749,316 @@
       });
       els.swatchRow.appendChild(b);
     });
+  }
+
+  // ---- object-aware editing (detect → segment → remove / recolor) -------
+  // Lets the chat act on a NAMED object ("entferne den Laptop", "färbe den
+  // Hund blau") instead of the whole image. Pipeline, all in-browser:
+  //   1. detect  — find the object's bounding box. COCO DETR for the 80 common
+  //      classes (fast, ~55 MB); OWL-ViT zero-shot ONLY for words COCO can't
+  //      know (~+148 MB, lazy-downloaded on demand). No cross-fallback, so the
+  //      big OWL download never happens for a common object.
+  //   2. segment — SlimSAM turns that box into a precise pixel mask.
+  //   3. edit    — recolor (masked HSV, keep brightness) or remove (boundary
+  //      inpaint). The result is baked into state.objectLayer so Reset still
+  //      restores the true original and other ops (optimize, bg, …) stack on top.
+  // Models stream from the HuggingFace/jsDelivr CDN on first use (the ONLY
+  // external hosts this feature needs); everything else stays on-device.
+
+  // German trigger words → detector query. coco = the COCO-80 label (DETR path);
+  // null coco = open-vocabulary, OWL-ViT path with the English `q` label.
+  var OBJ_SYN = [
+    { keys: ["laptop", "notebook", "computer"], coco: "laptop", q: "laptop" },
+    { keys: ["handy", "smartphone", "telefon"], coco: "cell phone", q: "mobile phone" },
+    { keys: ["hund"], coco: "dog", q: "dog" },
+    { keys: ["katze"], coco: "cat", q: "cat" },
+    { keys: ["auto", "wagen"], coco: "car", q: "car" },
+    { keys: ["fahrrad"], coco: "bicycle", q: "bicycle" },
+    { keys: ["pferd"], coco: "horse", q: "horse" },
+    { keys: ["vogel"], coco: "bird", q: "bird" },
+    { keys: ["tasse", "becher", "kaffee"], coco: "cup", q: "cup" },
+    { keys: ["flasche"], coco: "bottle", q: "bottle" },
+    { keys: ["stuhl"], coco: "chair", q: "chair" },
+    { keys: ["sofa", "couch"], coco: "couch", q: "couch" },
+    { keys: ["tisch"], coco: "dining table", q: "table" },
+    { keys: ["buch"], coco: "book", q: "book" },
+    { keys: ["uhr"], coco: "clock", q: "clock" },
+    { keys: ["fernseher", "tv"], coco: "tv", q: "tv" },
+    { keys: ["bett"], coco: "bed", q: "bed" },
+    { keys: ["pizza"], coco: "pizza", q: "pizza" },
+    { keys: ["apfel"], coco: "apple", q: "apple" },
+    { keys: ["banane"], coco: "banana", q: "banana" },
+    { keys: ["person", "mann", "frau", "kind", "junge", "mädchen", "mensch"], coco: "person", q: "person" },
+    // open-vocabulary (not in COCO-80) → OWL-ViT
+    { keys: ["gesicht"], coco: null, q: "face" },
+    { keys: ["haare", "haar"], coco: null, q: "hair" },
+    { keys: ["augen", "auge"], coco: null, q: "eye" },
+    { keys: ["hemd", "t-shirt", "shirt"], coco: null, q: "shirt" },
+    { keys: ["jacke"], coco: null, q: "jacket" },
+    { keys: ["pullover", "pulli"], coco: null, q: "sweater" },
+    { keys: ["hose"], coco: null, q: "pants" },
+    { keys: ["kleid"], coco: null, q: "dress" },
+    { keys: ["mütze", "hut"], coco: null, q: "hat" },
+    { keys: ["brille"], coco: null, q: "glasses" },
+    { keys: ["schuhe", "schuh"], coco: null, q: "shoe" },
+    { keys: ["blume"], coco: null, q: "flower" },
+    { keys: ["baum"], coco: null, q: "tree" },
+    { keys: ["himmel"], coco: null, q: "sky" },
+    { keys: ["wand"], coco: null, q: "wall" },
+    { keys: ["ball"], coco: null, q: "ball" },
+    { keys: ["tier"], coco: null, q: "animal" },
+    { keys: ["lippen", "mund"], coco: null, q: "lips" },
+    { keys: ["nase"], coco: null, q: "nose" },
+    { keys: ["haut"], coco: null, q: "skin" },
+    { keys: ["möbel"], coco: null, q: "furniture" },
+    { keys: ["tiger"], coco: null, q: "tiger" }
+  ];
+
+  // Find the first object noun mentioned in `text`. Longest key wins on ties so
+  // "augen" isn't shadowed by "auge"; earliest position wins overall. Returns
+  // { entry, key } (key is the German word, used in the chat reply) or null.
+  function findObject(text) {
+    var best = null;
+    for (var e = 0; e < OBJ_SYN.length; e++) {
+      var keys = OBJ_SYN[e].keys;
+      for (var k = 0; k < keys.length; k++) {
+        var idx = text.indexOf(keys[k]);
+        if (idx === -1) continue;
+        if (!best || idx < best.idx || (idx === best.idx && keys[k].length > best.key.length)) {
+          best = { entry: OBJ_SYN[e], key: keys[k], idx: idx };
+        }
+      }
+    }
+    return best ? { entry: best.entry, key: best.key } : null;
+  }
+
+  // ML model holders — all lazy so a user who never edits an object pays nothing.
+  var _tf = null, _cocoDet = null, _owlDet = null, _samModel = null, _samProc = null;
+  var TF_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2";
+
+  function loadTransformers() {
+    if (_tf) return Promise.resolve(_tf);
+    // Dynamic import keeps this classic IIFE script while pulling the ESM lib.
+    return import(/* webpackIgnore: true */ TF_URL).then(function (m) {
+      m.env.allowLocalModels = false;
+      _tf = m;
+      return m;
+    });
+  }
+  function loadCoco() {
+    if (_cocoDet) return Promise.resolve(_cocoDet);
+    return loadTransformers().then(function (m) {
+      return m.pipeline("object-detection", "Xenova/detr-resnet-50", { dtype: "q8", device: "wasm" });
+    }).then(function (p) { _cocoDet = p; return p; });
+  }
+  function loadOwl() {
+    if (_owlDet) return Promise.resolve(_owlDet);
+    return loadTransformers().then(function (m) {
+      return m.pipeline("zero-shot-object-detection", "Xenova/owlvit-base-patch32", { dtype: "q8", device: "wasm" });
+    }).then(function (p) { _owlDet = p; return p; });
+  }
+  function loadSam() {
+    if (_samModel && _samProc) return Promise.resolve(true);
+    return loadTransformers().then(function (m) {
+      return Promise.all([
+        m.SamModel.from_pretrained("Xenova/slimsam-77-uniform", { dtype: "q8", device: "wasm" }),
+        m.AutoProcessor.from_pretrained("Xenova/slimsam-77-uniform")
+      ]);
+    }).then(function (pair) { _samModel = pair[0]; _samProc = pair[1]; return true; });
+  }
+
+  // Canvas → transformers RawImage (RGBA, full canvas resolution).
+  function canvasToRawImage(canvas) {
+    var ctx = canvas.getContext("2d");
+    var id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return new _tf.RawImage(new Uint8ClampedArray(id.data), canvas.width, canvas.height, 4);
+  }
+
+  // Detect the object's bounding box {xmin,ymin,xmax,ymax} or null. COCO words
+  // use DETR only (no OWL fallback → no surprise 148 MB download); open-vocab
+  // words use OWL-ViT.
+  function detectObject(image, entry) {
+    if (entry.coco) {
+      return loadCoco().then(function (det) {
+        return det(image, { threshold: 0.5 });
+      }).then(function (out) {
+        var hits = out.filter(function (o) { return o.label === entry.coco; })
+                      .sort(function (a, b) { return b.score - a.score; });
+        return hits.length ? hits[0].box : null;
+      });
+    }
+    return loadOwl().then(function (det) {
+      return det(image, [entry.q], { threshold: 0.05, topk: 5 });
+    }).then(function (out) {
+      if (!out.length) return null;
+      return out.sort(function (a, b) { return b.score - a.score; })[0].box;
+    });
+  }
+
+  // SlimSAM: bounding box → binary mask {data:Uint8Array, w, h} (1 = object).
+  // v3 SamProcessor takes an options object. This SlimSAM ONNX export accepts
+  // only input_points/input_labels (it silently ignores input_boxes), so we
+  // prompt it with ONE positive point at the detection-box centre — that single
+  // well-placed point yields a full-object mask (~56% coverage on a centred
+  // subject), which is all this mosaic-grade recolor/remove needs.
+  function segmentBox(image, box) {
+    return loadSam().then(function () {
+      var cx = Math.round((box.xmin + box.xmax) / 2), cy = Math.round((box.ymin + box.ymax) / 2);
+      return _samProc(image, {
+        input_points: [[[cx, cy]]],
+        input_labels: [[1]]
+      });
+    }).then(function (inputs) {
+      return Promise.all([inputs, _samModel(Object.assign({}, inputs))]);
+    }).then(function (pair) {
+      var inputs = pair[0], outputs = pair[1];
+      return Promise.all([
+        inputs, outputs,
+        _samProc.post_process_masks(outputs.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes)
+      ]);
+    }).then(function (triple) {
+      var outputs = triple[1], masks = triple[2];
+      var mt = masks[0], dims = mt.dims;
+      var H = dims[dims.length - 2], W = dims[dims.length - 1];
+      var nMasks = dims[dims.length - 3] || 1;
+      var iou = outputs.iou_scores.data, best = 0;
+      for (var k = 1; k < nMasks; k++) if (iou[k] > iou[best]) best = k;
+      var plane = H * W, off = best * plane, md = mt.data;
+      var out = new Uint8Array(plane);
+      for (var i = 0; i < plane; i++) out[i] = md[off + i] ? 1 : 0;
+      return { mask: out, w: W, h: H };
+    });
+  }
+
+  // Grow a binary mask by `px` pixels (covers the soft object boundary).
+  function dilateMask(mask, w, h, px) {
+    var cur = mask;
+    for (var it = 0; it < px; it++) {
+      var nx = Uint8Array.from(cur);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var p = y * w + x;
+          if (cur[p]) continue;
+          if ((x > 0 && cur[p - 1]) || (x < w - 1 && cur[p + 1]) ||
+              (y > 0 && cur[p - w]) || (y < h - 1 && cur[p + w])) nx[p] = 1;
+        }
+      }
+      cur = nx;
+    }
+    return cur;
+  }
+
+  // Remove: iterative boundary inpaint — repeatedly fill masked pixels from their
+  // already-known neighbours until the hole is closed. Convincing for objects
+  // that don't fill the whole frame.
+  function inpaintMask(ctx, w, h, mask) {
+    var img = ctx.getImageData(0, 0, w, h), d = img.data;
+    var rem = Uint8Array.from(mask), remaining = 0, i;
+    for (i = 0; i < rem.length; i++) if (rem[i]) remaining++;
+    var guard = 0;
+    while (remaining > 0 && guard < 2000) {
+      guard++;
+      var fills = [];
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var p = y * w + x;
+          if (!rem[p]) continue;
+          var r = 0, g = 0, b = 0, c = 0, q;
+          if (x > 0 && !rem[p - 1]) { q = (p - 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
+          if (x < w - 1 && !rem[p + 1]) { q = (p + 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
+          if (y > 0 && !rem[p - w]) { q = (p - w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
+          if (y < h - 1 && !rem[p + w]) { q = (p + w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
+          if (c) fills.push([p, r / c, g / c, b / c]);
+        }
+      }
+      if (!fills.length) break;
+      for (var f = 0; f < fills.length; f++) {
+        var fp = fills[f][0] * 4;
+        d[fp] = fills[f][1]; d[fp + 1] = fills[f][2]; d[fp + 2] = fills[f][3];
+        rem[fills[f][0]] = 0; remaining--;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // Recolor: masked HSV repaint — force the target hue, keep each pixel's own
+  // brightness (V) so shading/texture survive, floor saturation so the new
+  // colour reads cleanly. Reuses the file's hexToRgb/rgbToHsv/hsvToRgb.
+  function recolorMask(ctx, w, h, mask, hex) {
+    var to = hexToRgb(hex), thsv = rgbToHsv(to.r, to.g, to.b);
+    var img = ctx.getImageData(0, 0, w, h), d = img.data;
+    for (var i = 0; i < mask.length; i++) {
+      if (!mask[i]) continue;
+      var q = i * 4;
+      var hsv = rgbToHsv(d[q], d[q + 1], d[q + 2]);
+      var rgb = hsvToRgb(thsv[0], Math.min(1, Math.max(hsv[1], 0.45)), hsv[2]);
+      d[q] = rgb[0]; d[q + 1] = rgb[1]; d[q + 2] = rgb[2];
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // Orchestrator: detect → segment → bake the edit into state.objectLayer, then
+  // recompute() (which re-applies any other active ops and re-renders the mosaic).
+  // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
+  function runObjectEdit(objMatch, action, colorObj) {
+    if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
+    var label = objMatch.key;
+    setBusy(true);
+    setStatus(tr("aiChatObjectModelLoading"));
+    addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
+
+    var base = workBase();
+    var W = base.width, H = base.height;
+    var image;
+    loadTransformers()
+      .then(function () {
+        image = canvasToRawImage(base);
+        return detectObject(image, objMatch.entry);
+      })
+      .then(function (box) {
+        if (!box) { return null; }
+        return segmentBox(image, box);
+      })
+      .then(function (seg) {
+        if (!seg) {
+          // not found → bail cleanly, no edit
+          clearStatus();
+          setBusy(false);
+          addMsg(tr("aiChatObjectNotFound").replace("{obj}", label), "bot");
+          return;
+        }
+        // Resample the model mask to the working-canvas grid, then dilate 2px.
+        var mask = new Uint8Array(W * H);
+        for (var y = 0; y < H; y++) {
+          var sy = Math.min(seg.h - 1, (y / H * seg.h) | 0);
+          for (var x = 0; x < W; x++) {
+            var sx = Math.min(seg.w - 1, (x / W * seg.w) | 0);
+            mask[y * W + x] = seg.mask[sy * seg.w + sx];
+          }
+        }
+        mask = dilateMask(mask, W, H, 2);
+        // Bake into a fresh object layer cloned from the current workBase.
+        var layer = cloneCanvas(base);
+        var lctx = layer.getContext("2d");
+        if (action === "remove") inpaintMask(lctx, W, H, mask);
+        else recolorMask(lctx, W, H, mask, colorObj.hex);
+        state.objectLayer = layer;
+        clearStatus();
+        // recompute() re-applies optimize/grayscale/recolor/bg on top and
+        // re-renders; it owns the busy lock from here (clears it on finish).
+        recompute(function () {
+          if (action === "remove") {
+            addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
+          } else {
+            addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
+          }
+        });
+      })
+      .catch(function () {
+        clearStatus();
+        setBusy(false);
+        addMsg(tr("aiChatObjectUnavailable"), "bot");
+      });
   }
 
   // ---- mini-chat (intent-scoped, image-only) ---------------------------
@@ -830,15 +1152,30 @@
     var bgWord = /(hintergrund|background|\bbg\b)/.test(text);
     var colorVerb = /(mach|mache|f(ä|ae)rb|einf(ä|ae)rb|color|colou?r)/.test(text);
 
-    // 2a) Object-targeted request guard. The tool works on the WHOLE image by
-    // colour — it can't locate a single object ("der Laptop", "die Haare"). If
-    // the user names an object together with a recolor verb/colour (and it's NOT
-    // a background command), explain the limitation honestly instead of silently
-    // recolouring the background — which is what used to happen and confused users.
-    var objectWord = /(laptop|notebook|computer|gesicht|haar|auge|hund|katze|tier|hemd|shirt|jacke|pullover|hose|kleid|m(ü|ue)tze|\bhut\b|auto|tasse|becher|kaffee|tisch|stuhl|\bwand\b|himmel|blume|baum|schuh|brille|handy|\bball\b|person|\bmann\b|\bfrau\b|\bkind\b|junge|m(ä|ae)dchen|haut|lippen|mund|\bnase\b|m(ö|oe)bel)/.test(text);
-    if (objectWord && !bgWord &&
-        (color || colorVerb || /(umf(ä|ae)rb|austausch|wechsel|(ä|ae)nder)/.test(text))) {
-      addMsg(tr("aiChatObjectUnsupported"), "bot");
+    // 2a) Object-targeted edit. If the user names a single object ("der Laptop",
+    // "die Haare") and it's NOT a background command, locate that object (DETR /
+    // OWL-ViT) and either remove it or recolor it. This runs BEFORE the whole-image
+    // colour ops so "färbe den Hund blau" hits the object, not the background.
+    var objMatch = findObject(text);
+    if (objMatch && !bgWord) {
+      var removeWord = /(entfern|wegmach|\bweg\b|\braus\b|l(ö|oe)sch|\bremove\b|\bdelete\b)/.test(text);
+      var objColors = detectColorsOrdered(text);
+      var recolorWord = /(umf(ä|ae)rb|f(ä|ae)rb|einf(ä|ae)rb|austausch|wechsel|colou?r)/.test(text);
+      var recolorWanted = objColors.length >= 1 || colorVerb || recolorWord;
+      if (recolorWanted) {
+        if (!need()) return;
+        var objColor = objColors.length ? objColors[objColors.length - 1].col : detectColor(text);
+        if (!objColor) { addMsg(tr("aiChatObjectNeedColor").replace("{obj}", objMatch.key), "bot"); return; }
+        runObjectEdit(objMatch, "recolor", objColor);
+        return;
+      }
+      if (removeWord) {
+        if (!need()) return;
+        runObjectEdit(objMatch, "remove", null);
+        return;
+      }
+      // Object named but no clear action → ask what to do with it.
+      addMsg(tr("aiChatObjectAsk").replace(/\{obj\}/g, objMatch.key), "bot");
       return;
     }
 

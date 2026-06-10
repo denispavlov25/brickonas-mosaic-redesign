@@ -239,7 +239,7 @@ const translations = {
         aiBusy: "Wird angewendet …",
         aiChatPlaceholder: "z. B. „Hintergrund blau“ oder „aus Orange mach Blau“",
         aiChatSend: "Senden",
-        aiChatGreeting: "Hi! Ich helfe dir nur bei deinem Bild. Sag z. B. „Hintergrund entfernen“, „mach den Hintergrund blau“, „aus Orange mach Blau“, „Bild optimieren“ oder „in Schwarz-Weiß“.",
+        aiChatGreeting: "Hi! Ich helfe dir nur bei deinem Bild. Sag z. B. „Hintergrund entfernen“, „mach den Hintergrund blau“, „entferne den Laptop“, „färbe den Hund blau“, „aus Orange mach Blau“, „Bild optimieren“ oder „in Schwarz-Weiß“.",
         aiChatOffTopic: "Ich bin nur für die Bildbearbeitung da 🙂 Ich kann z. B. den Hintergrund entfernen oder einfärben, einzelne Farben austauschen (z. B. „aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Was möchtest du mit dem Bild machen?",
         aiChatDoneOptimize: "Erledigt – ich habe Kontrast und Farben fürs Mosaik kräftiger gemacht.",
         aiChatDoneBg: "Erledigt – der Hintergrund ist entfernt. Du kannst auch eine Hintergrundfarbe wählen.",
@@ -253,9 +253,17 @@ const translations = {
         aiChatNoImage: "Es ist noch kein Bild geladen. Lade zuerst ein Foto hoch.",
         aiSegLoading: "Einen Moment – die KI-Personenerkennung wird geladen …",
         aiChatBgNoPerson: "Ich konnte auf dem Foto keine klar freistellbare Person erkennen, deshalb habe ich den Hintergrund anhand der Randfarbe entfernt. Das klappt am besten bei einem ruhigen, einfarbigen Hintergrund. Bei einem unruhigen Hintergrund hilft dir unser Designservice gern weiter.",
-        aiChatObjectUnsupported: "Einzelne Objekte (z. B. Laptop, Gesicht oder Haare) kann ich leider nicht gezielt auswählen. Ich kann aber den Hintergrund entfernen oder einfärben, einzelne Farben im ganzen Bild austauschen (z. B. „aus Orange mach Blau“), eine Farbe kräftiger oder blasser machen, das Bild optimieren oder in Schwarz-Weiß umwandeln.",
         aiChatDoneMore: "Erledigt – {color} ist jetzt kräftiger.",
         aiChatDoneLess: "Erledigt – {color} ist jetzt dezenter.",
+        // Object-aware editing (detect → segment → remove/recolor a named object)
+        aiChatObjectSearching: "Ich suche „{obj}“ im Bild … das kann beim ersten Mal einen Moment dauern.",
+        aiChatObjectModelLoading: "Ich lade einmalig das KI-Objektmodell … (kann etwas dauern).",
+        aiChatObjectNotFound: "Ich konnte „{obj}“ im Bild nicht eindeutig finden. Versuch ein anderes Wort oder ein deutlicheres Foto.",
+        aiChatDoneObjectRemove: "Erledigt – „{obj}“ ist jetzt aus dem Bild entfernt.",
+        aiChatDoneObjectRecolor: "Erledigt – „{obj}“ ist jetzt {color}.",
+        aiChatObjectNeedColor: "Welche Farbe soll „{obj}“ bekommen? Sag z. B. „färbe den {obj} blau“.",
+        aiChatObjectAsk: "Soll ich „{obj}“ entfernen oder umfärben? Sag z. B. „entferne den {obj}“ oder „färbe den {obj} blau“.",
+        aiChatObjectUnavailable: "Die KI-Objekterkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
 
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",
