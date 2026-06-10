@@ -1873,13 +1873,9 @@ function _finishStep3(alignedPixelArray) {
         // just drawn. drawStudImageOnCanvas fills the backing store synchronously,
         // but the browser still has to composite that new layer to screen; doing
         // that the same frame the overlay is removed produced a final visible hitch
-        // ("lag right after the loader disappears"). A double-rAF lets one real
-        // paint land first, so the reveal is clean.
-        requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-                enableInteraction();
-            });
-        });
+        // ("lag right after the loader disappears"). bkPaintThenRun's double-rAF
+        // lets one real paint land first, so the reveal is clean.
+        bkPaintThenRun(enableInteraction);
     }, 1);
 }
 
@@ -4710,9 +4706,9 @@ function goToStep(stepNumber) {
             snapshotOriginalPaletteIfNeeded();
             buildTilesOnce();
             picker.hidden = false;
-            requestAnimationFrame(function() {
-                requestAnimationFrame(renderTilePreviews);
-            });
+            // Render the style-tile previews after one real paint so the step-2
+            // transition stays smooth (same "wait for a painted frame" idiom).
+            bkPaintThenRun(renderTilePreviews);
         } else {
             picker.hidden = true;
         }
