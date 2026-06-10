@@ -229,14 +229,6 @@ const translations = {
         dsDesc: "Du bist nicht zufrieden mit dem Ergebnis? Schick uns dein Foto und wir erstellen dir kostenlos einen optimierten Mosaik-Vorschlag per E-Mail.",
         dsButton: "Designservice anfragen",
 
-        // Smart optimize (Step 2)
-        smartOptimizeBtn: "Mit KI optimieren",
-        smartOptimizeOnBtn: "KI-Optimierung aktiv",
-        smartOptimizeHint: "Macht Motive bei wenigen Noppen erkennbarer.",
-        smartOptimizeBusy: "Optimiere Mosaik …",
-        smartOptimizeOn: "KI-Optimierung aktiv – Konturen & Farben verstärkt.",
-        smartOptimizeOff: "KI-Optimierung aus – Standard-Mosaik.",
-
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",
         styleOriginal: "Original",
