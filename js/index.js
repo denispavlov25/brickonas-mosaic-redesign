@@ -1587,21 +1587,127 @@ function runStep3() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Off-main-thread color quantization (Web Worker).
+//
+// alignPixelsToStudMap() at high resolution is the single biggest main-thread
+// freeze on step 2/3 — it stalled the loader animation and made hovering the
+// style icons stutter. We push it into js/mosaic-align-worker.js so the main
+// thread stays responsive (loader spins, hover lifts animate) while it runs.
+//
+// The worker uses the identical d3 bundles + identical alignment code, so its
+// palette mapping is byte-identical to the synchronous path (the paid product's
+// brick counts / price never change). If the worker can't be created or errors,
+// we transparently fall back to the synchronous compute.
+// ---------------------------------------------------------------------------
+let _bkAlignWorker = null;
+let _bkAlignWorkerBroken = false;
+let _bkAlignSeq = 0; // monotonically increasing request id
+let _bkAlignLatestId = 0; // only this id's result is applied (drop stale)
+const _bkAlignPending = {}; // id -> { cb, pixels, studMap, distanceKey }
+
+function bkGetAlignWorker() {
+    if (_bkAlignWorkerBroken) return null;
+    if (_bkAlignWorker) return _bkAlignWorker;
+    if (typeof Worker === "undefined") {
+        _bkAlignWorkerBroken = true;
+        return null;
+    }
+    try {
+        _bkAlignWorker = new Worker("js/mosaic-align-worker.js?v=54");
+    } catch (e) {
+        _bkAlignWorkerBroken = true;
+        return null;
+    }
+    _bkAlignWorker.onmessage = function (e) {
+        const data = e.data || {};
+        const id = data.id;
+        const pending = _bkAlignPending[id];
+        delete _bkAlignPending[id];
+        if (!pending) return;
+
+        if (data.error) {
+            // Worker couldn't compute this job — fall back synchronously, but
+            // only for the latest request (stale ones are irrelevant now).
+            if (id === _bkAlignLatestId) {
+                const aligned = alignPixelsToStudMap(pending.pixels, pending.studMap, colorDistanceFunction);
+                pending.cb(aligned);
+            }
+            return;
+        }
+
+        if (id !== _bkAlignLatestId) return; // a newer request superseded this one
+        const typed = new Uint8ClampedArray(data.buffer);
+        // Array.from -> plain Array, matching the original return type exactly.
+        pending.cb(Array.from(typed));
+    };
+    _bkAlignWorker.onerror = function () {
+        // Mark broken so future calls go straight to the synchronous path.
+        _bkAlignWorkerBroken = true;
+        // Recover the latest in-flight job synchronously so the UI doesn't hang.
+        const latest = _bkAlignPending[_bkAlignLatestId];
+        const ids = Object.keys(_bkAlignPending);
+        ids.forEach((k) => delete _bkAlignPending[k]);
+        try { _bkAlignWorker.terminate(); } catch (e) {}
+        _bkAlignWorker = null;
+        if (latest) {
+            const aligned = alignPixelsToStudMap(latest.pixels, latest.studMap, colorDistanceFunction);
+            latest.cb(aligned);
+        }
+    };
+    return _bkAlignWorker;
+}
+
+// Returns true if the job was handed to the worker (cb will be called async with
+// a plain Array), false if no worker is available (caller must compute inline).
+function bkTryAlignInWorker(pixels, studMap, distanceKey, cb) {
+    const worker = bkGetAlignWorker();
+    if (!worker) return false;
+    const id = ++_bkAlignSeq;
+    _bkAlignLatestId = id;
+    // Copy so we can transfer the buffer without detaching the canvas-owned data.
+    const copy = new Uint8ClampedArray(pixels);
+    _bkAlignPending[id] = { cb: cb, pixels: pixels, studMap: studMap, distanceKey: distanceKey };
+    try {
+        worker.postMessage({ id: id, buffer: copy.buffer, studMap: studMap, distanceKey: distanceKey }, [copy.buffer]);
+    } catch (e) {
+        delete _bkAlignPending[id];
+        _bkAlignWorkerBroken = true;
+        return false;
+    }
+    return true;
+}
+
 function _runStep3Body() {
     const fiteredPixelArray = getPixelArrayFromCanvas(step2Canvas);
 
-    let alignedPixelArray;
+    const studMapForAlign = isBleedthroughEnabled() ? getDarkenedStudMap(selectedStudMap) : selectedStudMap;
 
     // TODO: Apply overrides separately
     if (quantizationAlgorithm === "twoPhase") {
-        alignedPixelArray = alignPixelsToStudMap(
+        // Heavy nearest-color quantization → run it in a Web Worker so the main
+        // thread stays free (smooth loader + style-icon hover). Byte-identical
+        // result; falls back to synchronous if the worker is unavailable.
+        const handed = bkTryAlignInWorker(
             fiteredPixelArray,
-            isBleedthroughEnabled() ? getDarkenedStudMap(selectedStudMap) : selectedStudMap,
-            colorDistanceFunction
+            studMapForAlign,
+            defaultDistanceFunctionKey,
+            function (alignedPixelArray) {
+                _finishStep3(alignedPixelArray);
+            }
         );
-    } else if (quantizationAlgorithm === "greedy" || quantizationAlgorithm === "greedyWithDithering") {
+        if (handed) {
+            return; // _finishStep3 runs when the worker posts its result back
+        }
+        // No worker available: compute inline.
+        _finishStep3(alignPixelsToStudMap(fiteredPixelArray, studMapForAlign, colorDistanceFunction));
+        return;
+    }
+
+    let alignedPixelArray;
+    if (quantizationAlgorithm === "greedy" || quantizationAlgorithm === "greedyWithDithering") {
         alignedPixelArray = correctPixelsForAvailableStudsWithGreedyDynamicDithering(
-            isBleedthroughEnabled() ? getDarkenedStudMap(selectedStudMap) : selectedStudMap,
+            studMapForAlign,
             fiteredPixelArray,
             targetResolution[0],
             colorDistanceFunction,
@@ -1612,7 +1718,7 @@ function _runStep3Body() {
         // assume we're dealing with a traditional error dithering algorithm
         const ditheringKernel = quantizationAlgorithmToTraditionalDitheringKernel[quantizationAlgorithm];
         alignedPixelArray = alignPixelsWithTraditionalDithering(
-            isBleedthroughEnabled() ? getDarkenedStudMap(selectedStudMap) : selectedStudMap,
+            studMapForAlign,
             fiteredPixelArray,
             targetResolution[0],
             colorDistanceFunction,
@@ -1620,6 +1726,12 @@ function _runStep3Body() {
         );
     }
 
+    _finishStep3(alignedPixelArray);
+}
+
+// Everything after the heavy quantization step. Split out so it can be called
+// either synchronously (greedy/dithering) or from the Web Worker callback.
+function _finishStep3(alignedPixelArray) {
     step3PixelArrayForEraser = alignedPixelArray;
     alignedPixelArray = getArrayWithOverridesApplied(
         alignedPixelArray,
