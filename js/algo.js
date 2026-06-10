@@ -945,7 +945,18 @@ function drawStudImageOnCanvas(
 
     const radius = scalingFactor / 2;
     const totalPixels = pixels.length / 4;
-    
+
+    // Stud-outline weight scales with stud size so the render looks identical at
+    // every scalingFactor. A fixed 1px stroke darkened low-resolution DISPLAY
+    // canvases disproportionately: at DISPLAY_SCALING_FACTOR (e.g. 6px studs) the
+    // 1px outline ate a much bigger fraction of each stud than at the full
+    // SCALING_FACTOR (e.g. 14px studs), so the step-2 "Farben" preview looked
+    // noticeably darker than the step-3 "Ergebnis" result even though the pixels
+    // were byte-identical. Capped at 1px so every export/PDF render
+    // (scalingFactor >= STUD_OUTLINE_REFERENCE_SCALING) is byte-for-byte unchanged.
+    const STUD_OUTLINE_REFERENCE_SCALING = 14;
+    ctx.lineWidth = Math.min(1, scalingFactor / STUD_OUTLINE_REFERENCE_SCALING);
+
     // Group pixels by color for batch rendering (optimization)
     const pixelsByColor = new Map();
     for (let i = 0; i < totalPixels; i++) {

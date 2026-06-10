@@ -3292,7 +3292,7 @@ async function generateInstructions() {
             document.getElementById("pdf-progress-container").hidden = true;
             document.getElementById("download-instructions-button").hidden = false;
             enableInteraction();
-            alert("Error generating PDF. For very high resolutions, try disabling 'High Quality' option or using a smaller resolution.");
+            alert("Die Anleitung konnte nicht erstellt werden. Bei sehr hohen Auflösungen hilft es, eine kleinere Auflösung zu wählen oder es noch einmal zu versuchen.");
         }
     });
 }
@@ -3455,7 +3455,7 @@ async function generateDepthInstructions() {
             document.getElementById("depth-pdf-progress-container").hidden = true;
             document.getElementById("download-depth-instructions-button").hidden = false;
             enableInteraction();
-            alert("Error generating PDF. For very high resolutions, try disabling 'High Quality' option or using a smaller resolution.");
+            alert("Die Anleitung konnte nicht erstellt werden. Bei sehr hohen Auflösungen hilft es, eine kleinere Auflösung zu wählen oder es noch einmal zu versuchen.");
         }
     });
 }
@@ -4157,7 +4157,6 @@ if (orderMosaicBtn) {
 
             // If uploader is enabled, generate PDF + upload (with progress status)
             var mosaicToken = null;
-            var uploadFailed = false;
             var uploaderCfg = await getMosaicUploaderConfig();
             console.log('[BRICKONAS] Uploader config:', uploaderCfg);
             if (uploaderCfg && uploaderCfg.enabled) {
@@ -4179,17 +4178,22 @@ if (orderMosaicBtn) {
                             statusEl.innerHTML = '⏳ <strong>Wird zum Warenkorb hinzugef&uuml;gt&hellip;</strong>';
                         }
                     } else {
-                        uploadFailed = true;
+                        // A failed instruction-PDF upload is NON-FATAL: the order still
+                        // goes through (we regenerate the build instructions server-side
+                        // and contact the customer). We must NOT paint a bk-error here —
+                        // the mosaic-cart-result success handler refuses to overwrite a
+                        // bk-error status, so the customer would see a scary "konnte nicht
+                        // hochgeladen werden" message even though their mosaic WAS added to
+                        // the cart. Keep the neutral progress state and just log it.
                         console.warn('[BRICKONAS] PDF upload failed, proceeding to cart without token');
                         if (statusEl) {
-                            statusEl.className = 'mosaic-order-status bk-error';
-                            statusEl.innerHTML = '⚠ Anleitung konnte nicht hochgeladen werden. Wir kontaktieren dich nach der Bestellung.';
+                            statusEl.className = 'mosaic-order-status bk-sending';
+                            statusEl.innerHTML = '⏳ <strong>Wird zum Warenkorb hinzugef&uuml;gt&hellip;</strong>';
                         }
                     }
                 } catch (genErr) {
-                    uploadFailed = true;
+                    // Non-fatal — the order still works without the instruction PDF.
                     console.error('[BRICKONAS] PDF generation/upload failed:', genErr);
-                    // continue without token — order still works
                 }
             }
 
