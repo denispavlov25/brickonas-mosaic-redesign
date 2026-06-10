@@ -1418,6 +1418,210 @@ const debouncedRunStep2 = debounce(() => {
     runStep2();
 }, DEBOUNCE_DELAY);
 
+/* ============================================================
+ * SMART ("KI") MOSAIC OPTIMIZATION (Step 2, opt-in)
+ * ------------------------------------------------------------
+ * Goal: make motifs recognizable at low noppen counts (e.g. 32x32).
+ * The standard path crops the photo straight to the brick grid with
+ * nearest-neighbor sampling, which turns busy textures (fur, foliage)
+ * into noise. When the user enables this, we instead:
+ *   1. take a HIGH-resolution crop of the selected region,
+ *   2. apply an edge-preserving bilateral smooth (kills texture noise
+ *      while keeping contours),
+ *   3. auto-level luminance + boost saturation (clearer tones),
+ *   4. boost contours so important edges (stripes, eyes) survive,
+ *   5. area-average downsample to the brick grid.
+ * The result then flows through the normal palette quantization.
+ * It is opt-in and reversible; when off, output is unchanged.
+ * ============================================================ */
+let bkSmartOptimize = false;
+// Last valid crop rectangle (cropper coords on step1CanvasUpscaled). Captured
+// in _runStep2Body while the cropper is live (step 1 visible) so the smart
+// re-run on step 2 — where the cropper is hidden and unusable — can still crop.
+let bkCachedCropRect = null;
+
+// Snapshot a cropper rect into a plain object. CropperJS getData() can hand back
+// a live-ish object whose fields go null once step 1 is hidden, so we must copy
+// the numbers — never keep the reference — or the cached rect silently nulls out.
+function bkSnapshotRect(r) {
+    if (!r || r.width == null) return null;
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+}
+
+// Edge-preserving bilateral smoothing over RGB (in place).
+function bkBilateralSmooth(data, w, h) {
+    const radius = 2;
+    const sigmaS = 2.0;
+    const sigmaR = 28.0;
+    const src = data.slice();
+    const sw = new Float32Array((2 * radius + 1) * (2 * radius + 1));
+    let si = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+            sw[si++] = Math.exp(-(dx * dx + dy * dy) / (2 * sigmaS * sigmaS));
+        }
+    }
+    const inv2r2 = 1 / (2 * sigmaR * sigmaR);
+    const rangeLUT = new Float32Array(512);
+    for (let i = 0; i < 512; i++) rangeLUT[i] = Math.exp(-(i * i) * inv2r2);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const ci = (y * w + x) * 4;
+            const lc = 0.299 * src[ci] + 0.587 * src[ci + 1] + 0.114 * src[ci + 2];
+            let sr = 0, sg = 0, sb = 0, wsum = 0, k = 0;
+            for (let dy = -radius; dy <= radius; dy++) {
+                let yy = y + dy; if (yy < 0) yy = 0; else if (yy >= h) yy = h - 1;
+                for (let dx = -radius; dx <= radius; dx++, k++) {
+                    let xx = x + dx; if (xx < 0) xx = 0; else if (xx >= w) xx = w - 1;
+                    const ni = (yy * w + xx) * 4;
+                    const nr = src[ni], ng = src[ni + 1], nb = src[ni + 2];
+                    const nl = 0.299 * nr + 0.587 * ng + 0.114 * nb;
+                    let dl = nl - lc; if (dl < 0) dl = -dl;
+                    const wgt = sw[k] * rangeLUT[dl | 0];
+                    sr += nr * wgt; sg += ng * wgt; sb += nb * wgt; wsum += wgt;
+                }
+            }
+            data[ci] = sr / wsum; data[ci + 1] = sg / wsum; data[ci + 2] = sb / wsum;
+        }
+    }
+}
+
+// Luminance percentile auto-levels (same lo/hi for all channels → no cast).
+function bkAutoLevelsLum(data) {
+    const n = data.length;
+    const hist = new Float64Array(256);
+    for (let i = 0; i < n; i += 4) {
+        const lum = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) | 0;
+        hist[lum]++;
+    }
+    const total = n / 4;
+    const loCut = total * 0.005, hiCut = total * 0.995;
+    let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= loCut) { lo = v; break; } }
+    acc = 0;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= hiCut) { hi = v; break; } }
+    if (hi <= lo) { lo = 0; hi = 255; }
+    const range = hi - lo;
+    for (let i = 0; i < n; i += 4) {
+        for (let c = 0; c < 3; c++) {
+            let val = (data[i + c] - lo) * 255 / range;
+            data[i + c] = val < 0 ? 0 : val > 255 ? 255 : val;
+        }
+    }
+}
+
+// Saturation boost around per-pixel luminance.
+function bkBoostSaturation(data, amount) {
+    const n = data.length;
+    for (let i = 0; i < n; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const l = 0.299 * r + 0.587 * g + 0.114 * b;
+        let nr = l + (r - l) * (1 + amount);
+        let ng = l + (g - l) * (1 + amount);
+        let nb = l + (b - l) * (1 + amount);
+        data[i] = nr < 0 ? 0 : nr > 255 ? 255 : nr;
+        data[i + 1] = ng < 0 ? 0 : ng > 255 ? 255 : ng;
+        data[i + 2] = nb < 0 ? 0 : nb > 255 ? 255 : nb;
+    }
+}
+
+// Darken strong contours (Sobel magnitude) so edges survive downsampling.
+function bkEdgeBoost(data, w, h, strength) {
+    const src = data.slice();
+    const L = function (i) { return 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2]; };
+    for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+            const ci = (y * w + x) * 4;
+            const tl = L(((y - 1) * w + (x - 1)) * 4), tc = L(((y - 1) * w + x) * 4), tr = L(((y - 1) * w + (x + 1)) * 4);
+            const ml = L((y * w + (x - 1)) * 4), mr = L((y * w + (x + 1)) * 4);
+            const bl = L(((y + 1) * w + (x - 1)) * 4), bc = L(((y + 1) * w + x) * 4), br = L(((y + 1) * w + (x + 1)) * 4);
+            const gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl);
+            const gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr);
+            let e = Math.sqrt(gx * gx + gy * gy) / 255;
+            if (e > 1) e = 1;
+            const factor = 1 - strength * e;
+            data[ci] *= factor; data[ci + 1] *= factor; data[ci + 2] *= factor;
+        }
+    }
+}
+
+// Produce a target-resolution pixel array from a high-res, smart-processed
+// crop. Returns a Uint8ClampedArray (RGBA) or null if it can't run.
+function bkSmartCropPixels() {
+    // Prefer the cached rect (valid even when the cropper is hidden on step 2).
+    let r = bkCachedCropRect;
+    if ((!r || r.width == null) && inputImageCropper && inputImageCropper.getData) {
+        const live = inputImageCropper.getData();
+        if (live && live.width != null) r = live;
+    }
+    if (!r || r.width == null || !inputImage) return null;
+    const tw = Number(targetResolution[0]);
+    const th = Number(targetResolution[1]);
+    const maxT = Math.max(tw, th);
+    const longSide = Math.min(1024, maxT * 16);
+    const w = Math.max(1, Math.round(longSide * tw / maxT));
+    const h = Math.max(1, Math.round(longSide * th / maxT));
+    // Crop rect is in step1CanvasUpscaled coords; map to the original image to
+    // pull maximum detail before downsampling.
+    const scale = inputImage.width / step1CanvasUpscaled.width;
+    const hi = document.createElement("canvas");
+    hi.width = w; hi.height = h;
+    const ctx = hi.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(inputImage, r.x * scale, r.y * scale, r.width * scale, r.height * scale, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, hi.width, hi.height);
+    bkBilateralSmooth(img.data, hi.width, hi.height);
+    bkAutoLevelsLum(img.data);
+    bkBoostSaturation(img.data, 0.22);
+    bkEdgeBoost(img.data, hi.width, hi.height, 0.35);
+    ctx.putImageData(img, 0, 0);
+    const tgt = document.createElement("canvas");
+    tgt.width = tw; tgt.height = th;
+    const tctx = tgt.getContext("2d");
+    tctx.imageSmoothingEnabled = true;
+    tctx.imageSmoothingQuality = "high";
+    tctx.drawImage(hi, 0, 0, hi.width, hi.height, 0, 0, tw, th);
+    return getPixelArrayFromCanvas(tgt);
+}
+
+(function bkSmartModule() {
+    const btn = document.getElementById("bk-smart-btn");
+    if (!btn) return;
+    const status = document.getElementById("bk-smart-status");
+    function setStatus(key, cls) {
+        if (!status) return;
+        status.textContent = t(key);
+        status.className = "bk-smart-status" + (cls ? " " + cls : "");
+    }
+    function updateBtn() {
+        btn.setAttribute("aria-pressed", bkSmartOptimize ? "true" : "false");
+        const lbl = btn.querySelector(".bk-smart-label");
+        if (lbl) lbl.textContent = t(bkSmartOptimize ? "smartOptimizeOnBtn" : "smartOptimizeBtn");
+    }
+    // Called by handleInputImage when a new image is loaded.
+    window.bkSmartReset = function () {
+        bkSmartOptimize = false;
+        updateBtn();
+        setStatus("smartOptimizeHint", "");
+        btn.disabled = false;
+    };
+    btn.addEventListener("click", function () {
+        bkSmartOptimize = !bkSmartOptimize;
+        updateBtn();
+        btn.disabled = true;
+        setStatus("smartOptimizeBusy", "is-busy");
+        // Regenerate steps 2-3 for the current crop with the new mode.
+        // Invalidate from step 2 only: step 1 (the cropper) stays put so it is
+        // not re-shown/hidden, and _runStep2Body uses the cached crop rect.
+        invalidateStepsFrom(2);
+        runStepProcessing(3, function () {
+            btn.disabled = false;
+            setStatus(bkSmartOptimize ? "smartOptimizeOn" : "smartOptimizeOff", bkSmartOptimize ? "is-on" : "");
+        });
+    });
+})();
+
 function runStep2() {
     const opts = bkLoaderOptsForResolution();
     disableInteraction(opts);
@@ -1433,15 +1637,47 @@ function runStep2() {
 
 function _runStep2Body() {
     let inputPixelArray;
-    if (selectedInterpolationAlgorithm === "default") {
-        const croppedCanvas = inputImageCropper.getCroppedCanvas({
-            width: targetResolution[0],
-            height: targetResolution[1],
-            maxWidth: 4096,
-            maxHeight: 4096,
-            imageSmoothingEnabled: false,
-        });
-        if (!croppedCanvas) {
+    // Capture the crop rectangle while the cropper is live (step 1 visible) so
+    // a later smart re-run on step 2 (cropper hidden) can still crop.
+    const bkLiveRect = (inputImageCropper && inputImageCropper.getData) ? inputImageCropper.getData() : null;
+    const bkCropperLive = !!(bkLiveRect && bkLiveRect.width != null);
+    if (bkCropperLive) bkCachedCropRect = bkSnapshotRect(bkLiveRect);
+    // Opt-in "Mit KI optimieren": replace the plain nearest-neighbor crop
+    // with an edge-aware, contrast/contour-boosted area-average downsample
+    // so low-noppen motifs stay recognizable. Falls back to the standard
+    // path if it can't run. When off, output is byte-identical to before.
+    if (bkSmartOptimize) {
+        try {
+            inputPixelArray = bkSmartCropPixels();
+        } catch (e) {
+            console.warn("Smart optimize failed, using standard crop:", e);
+            inputPixelArray = null;
+        }
+    }
+    if (inputPixelArray) {
+        // smart pixels ready — skip the standard crop branch below
+    } else if (selectedInterpolationAlgorithm === "default") {
+        let croppedCanvas = bkCropperLive
+            ? inputImageCropper.getCroppedCanvas({
+                  width: targetResolution[0],
+                  height: targetResolution[1],
+                  maxWidth: 4096,
+                  maxHeight: 4096,
+                  imageSmoothingEnabled: false,
+              })
+            : null;
+        // Fallback when the cropper is unusable (e.g. re-run while step 1 hidden):
+        // reproduce the same nearest-neighbor crop from the cached rect.
+        if ((!croppedCanvas || !croppedCanvas.width) && bkCachedCropRect && bkCachedCropRect.width != null) {
+            croppedCanvas = document.createElement("canvas");
+            croppedCanvas.width = Number(targetResolution[0]);
+            croppedCanvas.height = Number(targetResolution[1]);
+            const cx = croppedCanvas.getContext("2d");
+            cx.imageSmoothingEnabled = false;
+            const r = bkCachedCropRect;
+            cx.drawImage(step1CanvasUpscaled, r.x, r.y, r.width, r.height, 0, 0, croppedCanvas.width, croppedCanvas.height);
+        }
+        if (!croppedCanvas || !croppedCanvas.width) {
             console.error("Cropper returned no canvas — re-initializing");
             enableInteraction();
             showVisualStep(1);
@@ -1502,8 +1738,17 @@ function _runStep2Body() {
     step2DepthCanvas.width = targetResolution[0];
     step2DepthCanvas.height = targetResolution[1];
 
-    // Map the crop to the depth image
-    const cropperData = inputImageCropper.getData();
+    // Map the crop to the depth image. Use the live cropper rect when step 1
+    // is visible; fall back to the cached rect for a smart re-run on step 2
+    // (cropper hidden → getData() returns nulls).
+    let cropperData = (bkCropperLive ? bkLiveRect : null);
+    if (!cropperData || cropperData.width == null) cropperData = bkCachedCropRect;
+    if (!cropperData || cropperData.width == null) cropperData = inputImageCropper.getData();
+    // Last-resort guard: never feed null coords to getImageData/drawImage (would
+    // throw and stall runStepProcessing). Map the whole upscaled canvas instead.
+    if (!cropperData || cropperData.width == null) {
+        cropperData = { x: 0, y: 0, width: step1DepthCanvasUpscaled.width, height: step1DepthCanvasUpscaled.height };
+    }
     const rawCroppedDepthImage = step1DepthCanvasUpscaledContext.getImageData(
         cropperData.x,
         cropperData.y,
@@ -3654,6 +3899,8 @@ function handleInputImage(e, dontClearDepth, dontLog) {
             overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
             initializeCropper();
             runStep1();
+            // Reset smart-optimize toggle for the freshly loaded image
+            if (window.bkSmartReset) window.bkSmartReset();
         };
         inputImage.src = event.target.result;
         // Show visual step 1 and stepper
@@ -3957,6 +4204,13 @@ function invalidateStepsFrom(stepNumber) {
 var createMosaicBtn = document.getElementById('create-mosaic-btn');
 if (createMosaicBtn) {
     createMosaicBtn.addEventListener('click', function() {
+        // Snapshot the crop rect now, while step 1 is visible and the cropper is
+        // live, so a later "Mit KI optimieren" re-run on step 2 (cropper hidden,
+        // getData() returns nulls) can still crop from the cached rectangle.
+        if (inputImageCropper && inputImageCropper.getData) {
+            var _snap = bkSnapshotRect(inputImageCropper.getData());
+            if (_snap) bkCachedCropRect = _snap;
+        }
         invalidateStepsFrom(1);
         runStepProcessing(3, function() {
             showVisualStep(2);
