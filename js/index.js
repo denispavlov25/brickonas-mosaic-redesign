@@ -224,7 +224,30 @@ function getScalingFactor(width, height) {
     return Math.max(1, Math.min(BASE_SCALING_FACTOR, maxAllowedFactor));
 }
 
+// PERF: the on-screen step-3 editing canvas is shown at ~480 CSS px, yet at high
+// resolution SCALING_FACTOR produced a 4032×4032 (16 MP) backing store. Drawing
+// that with drawStudImageOnCanvas was a ~150 ms main-thread block on every style
+// change, and a 16 MP canvas layer is brutal for the compositor to repaint on
+// scroll/hover — exactly the "freeze after the loader" and "lag on scroll" the
+// customer reported. The studs are sub-pixel at that zoom anyway, so the extra
+// resolution is invisible.
+//
+// We therefore display the editing canvas at a capped resolution
+// (DISPLAY_SCALING_FACTOR, ≤ MAX_DISPLAY_CANVAS_DIMENSION px). The full-resolution
+// SCALING_FACTOR is still used for step 4 / the instruction PDF source
+// (step4CanvasUpscaled feeds PIXI), so export quality is unchanged. Low
+// resolutions (≤40 studs) are untouched because they were never the problem.
+const MAX_DISPLAY_CANVAS_DIMENSION = 2000;
+
+function getDisplayScalingFactor(width, height) {
+    const maxDimension = Math.max(width, height);
+    const maxAllowedFactor = Math.floor(MAX_DISPLAY_CANVAS_DIMENSION / maxDimension);
+    const full = getScalingFactor(width, height);
+    return Math.max(1, Math.min(full, maxAllowedFactor));
+}
+
 let SCALING_FACTOR = getScalingFactor(targetResolution[0], targetResolution[1]);
+let DISPLAY_SCALING_FACTOR = getDisplayScalingFactor(targetResolution[0], targetResolution[1]);
 
 // Plate dimensions in studs - updated dynamically based on step selectors
 let PLATE_WIDTH = 48;  // width step (plate width in studs)
@@ -387,6 +410,7 @@ let overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1
 
 function handleResolutionChange() {
     SCALING_FACTOR = getScalingFactor(targetResolution[0], targetResolution[1]);
+    DISPLAY_SCALING_FACTOR = getDisplayScalingFactor(targetResolution[0], targetResolution[1]);
     overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
     overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
     document.getElementById("width-text").title = `${(targetResolution[0] * PIXEL_WIDTH_CM).toFixed(1)} cm`;
@@ -1513,25 +1537,28 @@ function _runStep2Body() {
 
     setTimeout(() => {
         stepProcessed[2] = true;
-        step2CanvasUpscaled.width = targetResolution[0] * SCALING_FACTOR;
-        step2CanvasUpscaled.height = targetResolution[1] * SCALING_FACTOR;
+        // DISPLAY_SCALING_FACTOR (not SCALING_FACTOR): these step-2 upscaled canvases
+        // are display-only previews (never read back as an export/PDF source), so a
+        // capped backing store keeps the draw cheap and the layer light to composite.
+        step2CanvasUpscaled.width = targetResolution[0] * DISPLAY_SCALING_FACTOR;
+        step2CanvasUpscaled.height = targetResolution[1] * DISPLAY_SCALING_FACTOR;
         step2CanvasUpscaledContext.imageSmoothingEnabled = false;
         step2CanvasUpscaledContext.drawImage(
             step2Canvas,
             0,
             0,
-            targetResolution[0] * SCALING_FACTOR,
-            targetResolution[1] * SCALING_FACTOR
+            targetResolution[0] * DISPLAY_SCALING_FACTOR,
+            targetResolution[1] * DISPLAY_SCALING_FACTOR
         );
-        step2DepthCanvasUpscaled.width = targetResolution[0] * SCALING_FACTOR;
-        step2DepthCanvasUpscaled.height = targetResolution[1] * SCALING_FACTOR;
+        step2DepthCanvasUpscaled.width = targetResolution[0] * DISPLAY_SCALING_FACTOR;
+        step2DepthCanvasUpscaled.height = targetResolution[1] * DISPLAY_SCALING_FACTOR;
         drawStudImageOnCanvas(
             scaleUpDiscreteDepthPixelsForDisplay(
                 discreteDepthPixels,
                 document.getElementById("num-depth-levels-slider").value
             ),
             targetResolution[0],
-            SCALING_FACTOR,
+            DISPLAY_SCALING_FACTOR,
             step2DepthCanvasUpscaled,
             selectedPixelPartNumber
         );
@@ -1614,7 +1641,7 @@ function bkGetAlignWorker() {
         return null;
     }
     try {
-        _bkAlignWorker = new Worker("js/mosaic-align-worker.js?v=54");
+        _bkAlignWorker = new Worker("js/mosaic-align-worker.js?v=55");
     } catch (e) {
         _bkAlignWorkerBroken = true;
         return null;
@@ -1809,6 +1836,10 @@ function _finishStep3(alignedPixelArray) {
         // resolution) with nothing on screen — the "hang after the loader disappears"
         // the customer reported. Hiding only after the draws keeps the freeze covered.
         try {
+            // DISPLAY_SCALING_FACTOR (not SCALING_FACTOR): the step-3 editing canvas
+            // is only shown at a few hundred CSS px, so a capped backing store keeps
+            // the draw cheap and the layer light to composite on scroll/hover. The
+            // full-resolution render happens later on step 4 (export/PDF source).
             step3CanvasUpscaledContext.imageSmoothingEnabled = false;
             drawStudImageOnCanvas(
                 isBleedthroughEnabled()
@@ -1818,28 +1849,37 @@ function _finishStep3(alignedPixelArray) {
                       )
                     : alignedPixelArray,
                 targetResolution[0],
-                SCALING_FACTOR,
+                DISPLAY_SCALING_FACTOR,
                 step3CanvasUpscaled,
                 selectedPixelPartNumber,
                 step3VariablePixelPieceDimensions
             );
-            step3DepthCanvasUpscaled.width = targetResolution[0] * SCALING_FACTOR;
-            step3DepthCanvasUpscaled.height = targetResolution[1] * SCALING_FACTOR;
+            step3DepthCanvasUpscaled.width = targetResolution[0] * DISPLAY_SCALING_FACTOR;
+            step3DepthCanvasUpscaled.height = targetResolution[1] * DISPLAY_SCALING_FACTOR;
             drawStudImageOnCanvas(
                 scaleUpDiscreteDepthPixelsForDisplay(
                     adjustedDepthPixelArray,
                     document.getElementById("num-depth-levels-slider").value
                 ),
                 targetResolution[0],
-                SCALING_FACTOR,
+                DISPLAY_SCALING_FACTOR,
                 step3DepthCanvasUpscaled,
                 selectedPixelPartNumber
             );
         } catch (err) {
             console.error("runStep3 async error:", err);
         }
-        // Hide the loader only now that the heavy upscale render is done and painted.
-        enableInteraction();
+        // Hide the loader only after the new canvas has actually been PAINTED, not
+        // just drawn. drawStudImageOnCanvas fills the backing store synchronously,
+        // but the browser still has to composite that new layer to screen; doing
+        // that the same frame the overlay is removed produced a final visible hitch
+        // ("lag right after the loader disappears"). A double-rAF lets one real
+        // paint land first, so the reveal is clean.
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                enableInteraction();
+            });
+        });
     }, 1);
 }
 
@@ -1891,7 +1931,7 @@ function onDepthOverrideChange(row, col, isIncrease) {
                 255
             )
         );
-        const radius = SCALING_FACTOR / 2;
+        const radius = DISPLAY_SCALING_FACTOR / 2;
         const i = pixelIndex / 4;
         const ctx = step3DepthCanvasUpscaledContext;
         const width = targetResolution[0];
@@ -2004,7 +2044,7 @@ function onMouseMoveOverStep3Canvas(event) {
     const i = pixelIndex / 4;
     const ctx = step3CanvasUpscaledContext;
     const width = targetResolution[0];
-    const radius = SCALING_FACTOR / 2;
+    const radius = DISPLAY_SCALING_FACTOR / 2;
 
     if (activePaintbrushHex != null) {
         // mouse is clicked down, so we're handling the click
@@ -2099,7 +2139,7 @@ step3CanvasUpscaled.addEventListener(
             const i = step3CanvasHoveredPixel[0] * targetResolution[0] + step3CanvasHoveredPixel[1];
             const pixelIndex = i * 4;
 
-            const radius = SCALING_FACTOR / 2;
+            const radius = DISPLAY_SCALING_FACTOR / 2;
             step3CanvasUpscaledContext.beginPath();
             step3CanvasUpscaledContext.arc(
                 ((i % targetResolution[0]) * 2 + 1) * radius,
@@ -2237,7 +2277,7 @@ step3DepthCanvasUpscaled.addEventListener("mousemove", function (event) {
         ctx.lineWidth = 3;
         step4CanvasUpscaledContext.lineWidth = 3;
 
-        const radius = SCALING_FACTOR / 2;
+        const radius = DISPLAY_SCALING_FACTOR / 2;
         const width = targetResolution[0];
 
         const i = pixelRow * width + pixelCol;
@@ -2290,10 +2330,10 @@ step3DepthCanvasUpscaled.addEventListener("mouseleave", function (event) {
     if (step3CanvasHoveredPixel != null) {
         ctx.beginPath();
         ctx.rect(
-            step3CanvasHoveredPixel[1] * SCALING_FACTOR,
-            step3CanvasHoveredPixel[0] * SCALING_FACTOR,
-            SCALING_FACTOR,
-            SCALING_FACTOR
+            step3CanvasHoveredPixel[1] * DISPLAY_SCALING_FACTOR,
+            step3CanvasHoveredPixel[0] * DISPLAY_SCALING_FACTOR,
+            DISPLAY_SCALING_FACTOR,
+            DISPLAY_SCALING_FACTOR
         );
         ctx.strokeStyle = "#000000";
         ctx.stroke();
