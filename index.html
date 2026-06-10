@@ -544,6 +544,81 @@
         .bk-style-tile-label { font-size: 0.7rem; }
       }
 
+      /* === KI-BILDWERKZEUGE (step 2) === */
+      .bk-ai-tools {
+        margin-top: 18px;
+        padding: 18px 18px 16px;
+        background: linear-gradient(180deg, var(--bk-green-pale, #eef6ee) 0%, #ffffff 70%);
+        border: 1px solid rgba(46, 125, 50, 0.18);
+        border-radius: var(--bk-radius-md, 14px);
+      }
+      .bk-ai-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+      .bk-ai-head strong {
+        font-family: var(--bk-font-heading, Fredoka, sans-serif);
+        font-size: 1.08rem;
+        font-weight: 600;
+        color: var(--bk-green-dark, #1b5e20);
+        letter-spacing: 0.2px;
+      }
+      .bk-ai-head span { font-size: 0.84rem; color: var(--bk-dark-gray, #5a655c); line-height: 1.45; }
+      .bk-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .bk-ai-btn {
+        flex: 1 1 auto;
+        min-width: 140px;
+        padding: 10px 14px;
+        background: var(--bk-white, #fff);
+        color: var(--bk-green-dark, #1b5e20);
+        border: 1.5px solid var(--bk-green-primary, #2e7d32);
+        border-radius: var(--bk-radius-sm, 9px);
+        font-family: var(--bk-font-body, sans-serif);
+        font-size: 0.88rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.18s, color 0.18s, transform 0.12s, box-shadow 0.18s;
+      }
+      .bk-ai-btn:hover { background: var(--bk-green-primary, #2e7d32); color: #fff; transform: translateY(-1px); box-shadow: 0 3px 9px rgba(46, 125, 50, 0.25); }
+      .bk-ai-btn.is-active { background: var(--bk-green-primary, #2e7d32); color: #fff; }
+      .bk-ai-btn.bk-ai-reset { flex: 0 1 auto; min-width: 0; border-color: #cfd8cf; color: var(--bk-dark-gray, #5a655c); }
+      .bk-ai-btn.bk-ai-reset:hover { background: #eceff0; color: #2a352b; box-shadow: none; }
+      .bk-ai-btn:disabled { opacity: 0.55; cursor: progress; transform: none; box-shadow: none; }
+      .bk-ai-status { display: none; margin-top: 10px; padding: 8px 12px; font-size: 0.82rem; line-height: 1.4; color: var(--bk-green, #1E6B30); background: rgba(30, 107, 48, 0.08); border: 1px solid rgba(30, 107, 48, 0.18); border-radius: 8px; }
+      .bk-ai-status.is-visible { display: block; }
+      .bk-ai-swatches { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .bk-ai-swatch-label { font-size: 0.82rem; color: var(--bk-dark-gray, #5a655c); font-weight: 600; }
+      .bk-ai-swatch-row { display: flex; flex-wrap: wrap; gap: 6px; }
+      .bk-ai-swatch {
+        width: 26px; height: 26px; border-radius: 50%;
+        border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
+        cursor: pointer; padding: 0; transition: transform 0.12s;
+      }
+      .bk-ai-swatch:hover { transform: scale(1.12); }
+      .bk-ai-swatch.is-active { box-shadow: 0 0 0 2px var(--bk-green-primary, #2e7d32); }
+      .bk-ai-chat { margin-top: 14px; border-top: 1px dashed rgba(46, 125, 50, 0.22); padding-top: 12px; }
+      .bk-ai-chat-log { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; }
+      .bk-ai-msg { max-width: 88%; padding: 7px 11px; border-radius: 12px; font-size: 0.84rem; line-height: 1.4; }
+      .bk-ai-msg.bot { align-self: flex-start; background: var(--bk-green-pale, #eef6ee); color: #2a352b; border-bottom-left-radius: 4px; }
+      .bk-ai-msg.user { align-self: flex-end; background: var(--bk-green-primary, #2e7d32); color: #fff; border-bottom-right-radius: 4px; }
+      .bk-ai-chat-form { display: flex; gap: 8px; }
+      .bk-ai-chat-input {
+        flex: 1; padding: 10px 13px;
+        border: 1.5px solid #cfd8cf; border-radius: 22px;
+        font-family: var(--bk-font-body, sans-serif); font-size: 0.86rem; color: #2a352b;
+        outline: none; transition: border-color 0.18s;
+      }
+      .bk-ai-chat-input:focus { border-color: var(--bk-green-primary, #2e7d32); }
+      .bk-ai-chat-send {
+        flex-shrink: 0; width: 42px; height: 42px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: var(--bk-green-primary, #2e7d32); color: #fff;
+        border: none; border-radius: 50%; cursor: pointer;
+        transition: background 0.18s, transform 0.12s;
+      }
+      .bk-ai-chat-send:hover { background: var(--bk-green-dark, #1b5e20); transform: translateY(-1px); }
+      @media (max-width: 540px) {
+        .bk-ai-btn { flex: 1 1 100%; }
+        .bk-ai-btn.bk-ai-reset { flex: 1 1 100%; }
+      }
+
       /* === DESIGN SERVICE CTA (step 2) === */
       .bk-designservice {
         display: flex;
@@ -1778,6 +1853,37 @@
               </div>
             </div>
 
+            <!-- KI-Bildwerkzeuge: client-side image helpers so users can improve
+                 the photo (auto-optimize, background removal, recolor) without the
+                 paintbrush. Everything runs in-browser via js/bk-ai-tools.js — the
+                 photo never leaves the device (GDPR-friendly, 0 external hosts).
+                 The mini-chat is intent-scoped: it only understands image commands
+                 and politely refuses anything off-topic. -->
+            <div class="bk-ai-tools" id="bk-ai-tools" hidden>
+              <div class="bk-ai-head">
+                <strong data-i18n="aiTitle">✨ KI-Bildwerkzeuge</strong>
+                <span data-i18n="aiDesc">Lass dein Foto automatisch fürs Mosaik optimieren – ohne Pinsel. Alles passiert direkt in deinem Browser, dein Bild wird nicht hochgeladen.</span>
+              </div>
+              <div class="bk-ai-actions">
+                <button type="button" class="bk-ai-btn" id="bk-ai-optimize" data-i18n="aiOptimize">Automatisch optimieren</button>
+                <button type="button" class="bk-ai-btn" id="bk-ai-bg" data-i18n="aiRemoveBg">Hintergrund entfernen</button>
+                <button type="button" class="bk-ai-btn bk-ai-reset" id="bk-ai-reset" data-i18n="aiReset">Zurücksetzen</button>
+              </div>
+              <div class="bk-ai-swatches" id="bk-ai-swatches" hidden>
+                <span class="bk-ai-swatch-label" data-i18n="aiBgColor">Hintergrundfarbe:</span>
+                <div class="bk-ai-swatch-row" id="bk-ai-swatch-row"></div>
+              </div>
+              <div class="bk-ai-chat">
+                <div class="bk-ai-chat-log" id="bk-ai-chat-log" aria-live="polite"></div>
+                <form class="bk-ai-chat-form" id="bk-ai-chat-form" autocomplete="off">
+                  <input type="text" class="bk-ai-chat-input" id="bk-ai-chat-input" data-i18n-placeholder="aiChatPlaceholder" placeholder="z. B. „Hintergrund entfernen“ oder „mach den Hintergrund blau“" aria-label="Bildbefehl" />
+                  <button type="submit" class="bk-ai-chat-send" id="bk-ai-chat-send" data-i18n-title="aiChatSend" title="Senden" aria-label="Senden">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  </button>
+                </form>
+              </div>
+            </div>
+
             <!-- Free design service: lets users hand off the photo to the
                  BRICKONAS team if they're not happy with the auto-result.
                  Routes to /kontakt/?ref=mosaik-designservice — the contact
@@ -2041,10 +2147,12 @@
     <script src="js/bricklink-colors.js?v=1"></script>
     <script src="js/stud-maps.js?v=1"></script>
     <script src="js/heap.js"></script>
-    <script src="js/i18n.js?v=27"></script>
+    <script src="js/i18n.js?v=30"></script>
     <script src="js/algo.js?v=28"></script>
     <script src="js/instructions-vector.js?v=1"></script>
-    <script src="js/index.js?v=59"></script>
+    <script src="js/index.js?v=62"></script>
+    <script src="js/bk-ai-segment.js?v=2"></script>
+    <script src="js/bk-ai-tools.js?v=8"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing

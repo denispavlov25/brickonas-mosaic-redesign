@@ -1410,6 +1410,13 @@ const debouncedRunStep2 = debounce(() => {
     runStep2();
 }, DEBOUNCE_DELAY);
 
+// BK KI-Bildwerkzeuge: last valid crop geometry from a real (non-AI) step-2 run.
+// During an AI recompute the cropper is no longer laid out (step 1 is hidden) and
+// inputImageCropper.getData() returns NaN dims; we reuse this cached geometry so the
+// depth crop stays correct instead of throwing. AI ops are colour-only and never
+// change geometry/depth, so the cached crop is always still valid.
+let _lastValidStep2CropData = null;
+
 function runStep2() {
     const opts = bkLoaderOptsForResolution();
     disableInteraction(opts);
@@ -1425,14 +1432,54 @@ function runStep2() {
 
 function _runStep2Body() {
     let inputPixelArray;
+    // BK KI-Bildwerkzeuge (step 2): when the user applied a client-side AI image
+    // op (auto-optimize / background removal / recolor), js/bk-ai-tools.js exposes
+    // the processed crop as window.bkAi.sourceCanvas. When present it transparently
+    // replaces the live cropper source feeding the mosaic, so the rest of the
+    // pipeline (HSV/brightness/contrast filters, depth, display) is unchanged.
+    // When null (default / reset), behaviour is exactly as before.
+    const bkAiSource = (window.bkAi && window.bkAi.sourceCanvas) ? window.bkAi.sourceCanvas : null;
+    // BK KI-Bildwerkzeuge: snapshot a working-resolution copy of the genuine
+    // crop while the cropper is still laid out. The CropperJS crop box collapses
+    // to 0x0 once step 1 is hidden, so this is the only reliable moment to grab a
+    // usable source for the client-side image ops. js/bk-ai-tools.js reads
+    // window.bkAi.baseCrop. Only runs on a real (non-AI) crop; non-fatal on error.
+    if (!bkAiSource && window.bkAi) {
+        try {
+            const cd = inputImageCropper.getData();
+            if (cd && cd.width) {
+                const ar = cd.width / cd.height;
+                let sw = 800, sh = Math.round(800 / ar);
+                if (sh > 800) { sh = 800; sw = Math.round(800 * ar); }
+                const snap = inputImageCropper.getCroppedCanvas({
+                    width: sw,
+                    height: sh,
+                    maxWidth: 4096,
+                    maxHeight: 4096,
+                    imageSmoothingEnabled: true,
+                });
+                if (snap && snap.width) { window.bkAi.baseCrop = snap; }
+            }
+        } catch (e) { /* AI tools simply stay inert if the snapshot fails */ }
+    }
     if (selectedInterpolationAlgorithm === "default") {
-        const croppedCanvas = inputImageCropper.getCroppedCanvas({
-            width: targetResolution[0],
-            height: targetResolution[1],
-            maxWidth: 4096,
-            maxHeight: 4096,
-            imageSmoothingEnabled: false,
-        });
+        let croppedCanvas;
+        if (bkAiSource) {
+            croppedCanvas = document.createElement("canvas");
+            croppedCanvas.width = targetResolution[0];
+            croppedCanvas.height = targetResolution[1];
+            const bkCtx = croppedCanvas.getContext("2d");
+            bkCtx.imageSmoothingEnabled = false;
+            bkCtx.drawImage(bkAiSource, 0, 0, targetResolution[0], targetResolution[1]);
+        } else {
+            croppedCanvas = inputImageCropper.getCroppedCanvas({
+                width: targetResolution[0],
+                height: targetResolution[1],
+                maxWidth: 4096,
+                maxHeight: 4096,
+                imageSmoothingEnabled: false,
+            });
+        }
         if (!croppedCanvas) {
             console.error("Cropper returned no canvas — re-initializing");
             enableInteraction();
@@ -1442,7 +1489,7 @@ function _runStep2Body() {
         inputPixelArray = getPixelArrayFromCanvas(croppedCanvas);
     } else {
         // We're using adaptive pooling
-        const croppedCanvas = inputImageCropper.getCroppedCanvas({
+        const croppedCanvas = bkAiSource || inputImageCropper.getCroppedCanvas({
             maxWidth: 4096,
             maxHeight: 4096,
             imageSmoothingEnabled: false,
@@ -1494,29 +1541,38 @@ function _runStep2Body() {
     step2DepthCanvas.width = targetResolution[0];
     step2DepthCanvas.height = targetResolution[1];
 
-    // Map the crop to the depth image
-    const cropperData = inputImageCropper.getData();
-    const rawCroppedDepthImage = step1DepthCanvasUpscaledContext.getImageData(
-        cropperData.x,
-        cropperData.y,
-        cropperData.width,
-        cropperData.height
-    );
+    // Map the crop to the depth image.
+    // BK KI-Bildwerkzeuge: during an AI recompute step 1 is hidden, so the
+    // CropperJS box has collapsed and inputImageCropper.getData() returns NaN
+    // dims. Re-reading the depth crop with those used to throw (getImageData with
+    // NaN), aborting step 2 *before* stepProcessed[2] was set — which silently
+    // stalled the whole pipeline (step 3 never ran, the preview never updated,
+    // the watchdog recovered after a few seconds with nothing changed). Reuse the
+    // last valid crop geometry instead; AI ops are colour-only and never change
+    // the depth/geometry, so the cached crop is always still correct.
+    let cropperData = inputImageCropper.getData();
+    if (cropperData && isFinite(cropperData.width) && cropperData.width > 0) {
+        _lastValidStep2CropData = cropperData;
+    } else {
+        cropperData = _lastValidStep2CropData;
+    }
     const cropperBufferCanvas = document.getElementById("step-2-depth-canvas-cropper-buffer");
-    const cropperBufferCanvasContext = cropperBufferCanvas.getContext("2d");
-    cropperBufferCanvas.width = targetResolution[0];
-    cropperBufferCanvas.height = targetResolution[1];
-    cropperBufferCanvasContext.drawImage(
-        step1DepthCanvasUpscaled,
-        cropperData.x,
-        cropperData.y,
-        cropperData.width,
-        cropperData.height,
-        0,
-        0,
-        targetResolution[0],
-        targetResolution[1]
-    );
+    if (cropperData && isFinite(cropperData.width) && cropperData.width > 0) {
+        const cropperBufferCanvasContext = cropperBufferCanvas.getContext("2d");
+        cropperBufferCanvas.width = targetResolution[0];
+        cropperBufferCanvas.height = targetResolution[1];
+        cropperBufferCanvasContext.drawImage(
+            step1DepthCanvasUpscaled,
+            cropperData.x,
+            cropperData.y,
+            cropperData.width,
+            cropperData.height,
+            0,
+            0,
+            targetResolution[0],
+            targetResolution[1]
+        );
+    }
     const inputDepthPixelArray = getPixelArrayFromCanvas(cropperBufferCanvas);
 
     const discreteDepthPixels = getDiscreteDepthPixels(
