@@ -605,36 +605,61 @@
         .bk-mode-tab { padding: 10px 8px; font-size: 0.88rem; gap: 5px; }
       }
 
-      /* === KI-BILDWERKZEUGE (step 2) === */
+      /* === KI-BILDWERKZEUGE (step 2) ===
+         Colour-coded creative toolkit. Each tool carries its own accent hue so
+         the actions read as distinct tasks instead of three look-alike green
+         buttons: brand GREEN = the recommended one-click optimise, VIOLET = the
+         cut-out / background tool (a different kind of edit, the hue most photo
+         tools use for this), AMBER = the free-text wish/chat. The accents are
+         applied as tinted icon chips + borders so the brand green still leads. */
       .bk-ai-tools {
+        --ai-violet: #6c5ce7;
+        --ai-violet-pale: #efebff;
+        --ai-violet-dark: #4b3bc4;
+        --ai-violet-border: rgba(108, 92, 231, 0.34);
+        --ai-amber: #f59e0b;
+        --ai-amber-pale: #fff4dc;
+        --ai-amber-dark: #b45309;
+        --ai-amber-border: rgba(245, 158, 11, 0.48);
+        position: relative;
         margin-top: 18px;
-        padding: 20px;
-        background: var(--bk-white, #fff);
-        border: 1px solid rgba(46, 125, 50, 0.16);
+        padding: 22px 20px 20px;
+        background:
+          radial-gradient(130% 150% at 0% 0%, rgba(108, 92, 231, 0.045) 0%, rgba(108, 92, 231, 0) 44%),
+          radial-gradient(130% 150% at 100% 0%, rgba(245, 158, 11, 0.05) 0%, rgba(245, 158, 11, 0) 44%),
+          linear-gradient(180deg, #f0f8f0 0%, #e6f3e7 100%);
+        border: 1px solid rgba(46, 125, 50, 0.22);
         border-radius: var(--bk-radius-md, 14px);
-        box-shadow: 0 2px 14px rgba(27, 94, 32, 0.06);
+        box-shadow: 0 4px 20px rgba(27, 94, 32, 0.07);
+        overflow: hidden;
+      }
+      /* Solid dark-green strip flags the "creative AI" zone at a glance. */
+      .bk-ai-tools::before {
+        content: "";
+        position: absolute; top: 0; left: 0; right: 0; height: 4px;
+        background: #1b5e20;
       }
       .bk-ai-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
       .bk-ai-head strong {
         font-family: var(--bk-font-heading, Fredoka, sans-serif);
-        font-size: 1.1rem;
+        font-size: 1.12rem;
         font-weight: 600;
         color: var(--bk-green-dark, #1b5e20);
         letter-spacing: 0.2px;
       }
       .bk-ai-head span { font-size: 0.84rem; color: var(--bk-dark-gray, #5a655c); line-height: 1.45; }
-      .bk-ai-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .bk-ai-actions { display: flex; flex-wrap: wrap; gap: 12px; }
       /* Two distinct primary tasks rendered as icon tiles so they read as two
-         different actions (not three look-alike buttons). */
+         different actions (not look-alike buttons). */
       .bk-ai-btn {
         flex: 1 1 200px;
         display: flex;
         align-items: center;
         gap: 12px;
         padding: 14px 16px;
-        border-radius: var(--bk-radius-sm, 9px);
+        border-radius: var(--bk-radius-sm, 10px);
         font-family: var(--bk-font-body, sans-serif);
-        font-size: 0.9rem;
+        font-size: 0.92rem;
         font-weight: 700;
         text-align: left;
         cursor: pointer;
@@ -642,32 +667,45 @@
       }
       .bk-ai-btn .bk-ai-btn-ico {
         flex-shrink: 0;
-        width: 38px; height: 38px;
+        width: 40px; height: 40px;
         display: inline-flex; align-items: center; justify-content: center;
-        border-radius: 10px;
+        border-radius: 11px;
         transition: background 0.18s, color 0.18s;
       }
       .bk-ai-btn .bk-ai-btn-tx { display: flex; flex-direction: column; gap: 2px; line-height: 1.2; }
-      .bk-ai-btn .bk-ai-btn-tx small { font-size: 0.74rem; font-weight: 500; opacity: 0.8; }
+      .bk-ai-btn .bk-ai-btn-tx small { font-size: 0.75rem; font-weight: 600; opacity: 0.82; }
       /* Primary: filled green — the recommended one-click action. */
       .bk-ai-btn-primary {
-        background: linear-gradient(135deg, #33913a 0%, #2e7d32 55%, #236b2a 100%);
+        background: linear-gradient(135deg, #38a13f 0%, #2e7d32 52%, #236b2a 100%);
         color: #fff; border: none;
-        box-shadow: 0 3px 10px rgba(46, 125, 50, 0.28);
+        box-shadow: 0 6px 16px rgba(46, 125, 50, 0.30);
       }
-      .bk-ai-btn-primary .bk-ai-btn-ico { background: rgba(255, 255, 255, 0.2); color: #fff; }
-      .bk-ai-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(46, 125, 50, 0.34); }
-      .bk-ai-btn-primary.is-active { background: var(--bk-green-dark, #1b5e20); }
-      /* Secondary: outlined white card — clearly a different, optional action. */
+      .bk-ai-btn-primary .bk-ai-btn-ico { background: rgba(255, 255, 255, 0.22); color: #fff; }
+      .bk-ai-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(46, 125, 50, 0.38); }
+      .bk-ai-btn-primary.is-active { background: linear-gradient(135deg, #2e7d32, #1b5e20); }
+      /* Secondary: outlined card themed by an accent hue (default green). The
+         per-tool accent is swapped via the --ai-accent-* variables below. */
       .bk-ai-btn-secondary {
+        --ai-accent: var(--bk-green-primary, #2e7d32);
+        --ai-accent-pale: #eef6ee;
+        --ai-accent-dark: var(--bk-green-dark, #1b5e20);
+        --ai-accent-border: rgba(46, 125, 50, 0.30);
         background: var(--bk-white, #fff);
         color: #2a352b;
-        border: 1.5px solid rgba(46, 125, 50, 0.28);
+        border: 1.5px solid var(--ai-accent-border);
       }
-      .bk-ai-btn-secondary .bk-ai-btn-ico { background: var(--bk-green-pale, #eef6ee); color: var(--bk-green-primary, #2e7d32); }
-      .bk-ai-btn-secondary:hover { transform: translateY(-2px); border-color: var(--bk-green-primary, #2e7d32); box-shadow: 0 4px 12px rgba(46, 125, 50, 0.16); }
-      .bk-ai-btn-secondary.is-active { background: var(--bk-green-pale, #eef6ee); border-color: var(--bk-green-primary, #2e7d32); color: var(--bk-green-dark, #1b5e20); }
-      .bk-ai-btn-secondary.is-active .bk-ai-btn-ico { background: var(--bk-green-primary, #2e7d32); color: #fff; }
+      .bk-ai-btn-secondary .bk-ai-btn-ico { background: var(--ai-accent-pale); color: var(--ai-accent); }
+      .bk-ai-btn-secondary:hover { transform: translateY(-2px); border-color: var(--ai-accent); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.10); }
+      .bk-ai-btn-secondary:hover .bk-ai-btn-ico { background: var(--ai-accent); color: #fff; }
+      .bk-ai-btn-secondary.is-active { background: var(--ai-accent-pale); border-color: var(--ai-accent); color: var(--ai-accent-dark); }
+      .bk-ai-btn-secondary.is-active .bk-ai-btn-ico { background: var(--ai-accent); color: #fff; }
+      /* Violet accent for the cut-out / background-removal tool. */
+      .bk-ai-btn--violet {
+        --ai-accent: var(--ai-violet);
+        --ai-accent-pale: var(--ai-violet-pale);
+        --ai-accent-dark: var(--ai-violet-dark);
+        --ai-accent-border: var(--ai-violet-border);
+      }
       .bk-ai-btn:disabled { opacity: 0.55; cursor: progress; transform: none; box-shadow: none; }
       /* Reset: quiet tertiary text button, set apart so it can't be confused
          with the two action tiles above. */
@@ -697,19 +735,28 @@
       }
       .bk-ai-swatch:hover { transform: scale(1.12); }
       .bk-ai-swatch.is-active { box-shadow: 0 0 0 2px var(--bk-green-primary, #2e7d32); }
+      /* Chat: amber-accented entry to the free-text wish box — a third, clearly
+         different colour so it doesn't blend into the two action tiles above. */
       .bk-ai-chat-toggle {
-        display: flex; align-items: center; gap: 9px;
-        width: 100%; margin-top: 16px; padding: 12px 15px;
+        display: flex; align-items: center; gap: 11px;
+        width: 100%; margin-top: 16px; padding: 11px 14px;
         background: var(--bk-white, #fff);
-        color: var(--bk-green-dark, #1b5e20);
-        border: 1.5px dashed rgba(46, 125, 50, 0.42);
-        border-radius: var(--bk-radius-sm, 9px);
+        color: #2a352b;
+        border: 1.5px dashed var(--ai-amber-border, rgba(245, 158, 11, 0.48));
+        border-radius: var(--bk-radius-sm, 10px);
         font-family: var(--bk-font-body, sans-serif);
-        font-size: 0.88rem; font-weight: 700;
+        font-size: 0.9rem; font-weight: 700;
         cursor: pointer; transition: background 0.18s, border-color 0.18s;
       }
-      .bk-ai-chat-toggle:hover { background: var(--bk-green-pale, #eef6ee); border-color: var(--bk-green-primary, #2e7d32); }
-      .bk-ai-chat-toggle::after { content: "\25BE"; margin-left: auto; font-size: 0.85rem; color: var(--bk-dark-gray, #5a655c); transition: transform 0.2s; }
+      .bk-ai-chat-toggle .bk-ai-chat-ico {
+        flex-shrink: 0; width: 34px; height: 34px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: var(--ai-amber-pale, #fff4dc); color: var(--ai-amber-dark, #b45309);
+        border-radius: 10px; transition: background 0.18s, color 0.18s;
+      }
+      .bk-ai-chat-toggle:hover { background: var(--ai-amber-pale, #fff4dc); border-color: var(--ai-amber, #f59e0b); }
+      .bk-ai-chat-toggle:hover .bk-ai-chat-ico { background: var(--ai-amber, #f59e0b); color: #fff; }
+      .bk-ai-chat-toggle::after { content: "\25BE"; margin-left: auto; font-size: 0.85rem; color: var(--ai-amber-dark, #b45309); transition: transform 0.2s; }
       .bk-ai-chat-toggle[aria-expanded="true"]::after { transform: rotate(180deg); }
       .bk-ai-chat[hidden] { display: none; }
       .bk-ai-chat { margin-top: 12px; }
@@ -724,15 +771,15 @@
         font-family: var(--bk-font-body, sans-serif); font-size: 0.86rem; color: #2a352b;
         outline: none; transition: border-color 0.18s;
       }
-      .bk-ai-chat-input:focus { border-color: var(--bk-green-primary, #2e7d32); }
+      .bk-ai-chat-input:focus { border-color: var(--ai-amber, #f59e0b); }
       .bk-ai-chat-send {
         flex-shrink: 0; width: 42px; height: 42px;
         display: inline-flex; align-items: center; justify-content: center;
-        background: var(--bk-green-primary, #2e7d32); color: #fff;
+        background: var(--ai-amber, #f59e0b); color: #fff;
         border: none; border-radius: 50%; cursor: pointer;
         transition: background 0.18s, transform 0.12s;
       }
-      .bk-ai-chat-send:hover { background: var(--bk-green-dark, #1b5e20); transform: translateY(-1px); }
+      .bk-ai-chat-send:hover { background: var(--ai-amber-dark, #b45309); transform: translateY(-1px); }
       @media (max-width: 540px) {
         .bk-ai-btn { flex: 1 1 100%; }
       }
@@ -1980,7 +2027,7 @@
                     </span>
                     <span class="bk-ai-btn-tx"><span data-i18n="aiOptimize">Automatisch optimieren</span><small data-i18n="aiOptimizeHint">Fürs Mosaik aufbereiten</small></span>
                   </button>
-                  <button type="button" class="bk-ai-btn bk-ai-btn-secondary" id="bk-ai-bg">
+                  <button type="button" class="bk-ai-btn bk-ai-btn-secondary bk-ai-btn--violet" id="bk-ai-bg">
                     <span class="bk-ai-btn-ico" aria-hidden="true">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
                     </span>
@@ -1999,7 +2046,9 @@
                      stays compact; users open it only when they want to type a
                      free-form wish ("entferne den Laptop", "mach den Hund blau"). -->
                 <button type="button" class="bk-ai-chat-toggle" id="bk-ai-chat-toggle" aria-expanded="false" aria-controls="bk-ai-chat">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span class="bk-ai-chat-ico" aria-hidden="true">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </span>
                   <span data-i18n="aiChatToggle">Eigenen Wunsch eingeben</span>
                 </button>
                 <div class="bk-ai-chat" id="bk-ai-chat" hidden>
