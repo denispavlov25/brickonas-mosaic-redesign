@@ -5,12 +5,18 @@
  * verfeinern" step. Lets users improve the source photo without the
  * paintbrush: auto-optimize, background removal and background recolor.
  * Plus an intent-scoped mini-chat that ONLY understands image commands
- * and politely refuses anything off-topic (no general LLM, no network).
+ * and politely refuses anything off-topic.
  *
- * EVERYTHING runs in the browser — the photo never leaves the device.
- * No external hosts, no API keys, GDPR-friendly. Easy to revert: this
- * file + the small _runStep2Body override + the panel markup are the
- * whole feature.
+ * Privacy: ALL image processing runs in the browser — the photo never
+ * leaves the device. Two features reach the network, and neither sends
+ * the image:
+ *   - object-aware edits stream ML models (DETR/OWL-ViT/SlimSAM) from a
+ *     public CDN on first use (see OBJ_SYN block below);
+ *   - the chat sends only the typed TEXT to a same-origin proxy
+ *     (mu-plugin bk-ai-chat-proxy.php) which calls Gemini for intent
+ *     classification, then executes the result locally. The API key
+ *     stays server-side; if the proxy is unreachable the chat falls back
+ *     to the offline regex parser (routeLocal). See askLLM/dispatchIntent.
  *
  * Integration contract with js/index.js (all globals it relies on):
  *   - inputImageCropper        CropperJS instance (alive on step 2)
@@ -32,6 +38,8 @@
 
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
+  // KEEP IN SYNC WITH bk_ai_chat_colors() in mu-plugins/bk-ai-chat-proxy.php
+  // (the LLM's allowed-colour enum must match these names exactly).
   var COLORS = [
     { name: "weiß", hex: "#ffffff" },
     { name: "schwarz", hex: "#1a1a1a" },
@@ -801,6 +809,8 @@
 
   // German trigger words → detector query. coco = the COCO-80 label (DETR path);
   // null coco = open-vocabulary, OWL-ViT path with the English `q` label.
+  // KEEP IN SYNC WITH bk_ai_chat_objects() in mu-plugins/bk-ai-chat-proxy.php
+  // (the LLM's allowed-object enum uses the FIRST key of each entry here).
   var OBJ_SYN = [
     { keys: ["laptop", "notebook", "computer"], coco: "laptop", q: "laptop" },
     { keys: ["handy", "smartphone", "telefon"], coco: "cell phone", q: "mobile phone" },
@@ -1342,12 +1352,22 @@
     }
   }
 
+  // A message that is ONLY a greeting or a "what can you do?" — handled locally
+  // so it never spends an LLM round-trip (or free-tier quota). Must match the
+  // WHOLE trimmed message: "hallo, mach den hintergrund blau" still carries a
+  // real command and falls through to the LLM.
+  function isGreetingOnly(text) {
+    return /^(hallo|hi|hey|moin|servus|na|guten (tag|morgen|abend)|hilfe|help|was kannst du( so)?|was geht|wie funktioniert( das)?)[\s!?.,]*$/i.test(text);
+  }
+
   // Public chat entry: echo the user, ask the LLM, dispatch — fall back to the
   // offline parser on any proxy failure so the chat always responds.
   function handleChat(raw) {
     var text = (raw || "").trim();
     if (!text) return;
     addMsg(text, "user");
+    // Trivial greeting/help → answer locally, skip the network entirely.
+    if (isGreetingOnly(text)) { addMsg(tr("aiChatGreeting"), "bot"); return; }
     var typing = showTyping();
     askLLM(text).then(function (intent) {
       hideTyping(typing);
