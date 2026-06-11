@@ -4,6 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
+    <!-- Embedded vs standalone: when this page runs inside the WordPress iframe
+         the parent resizes us to fit (mosaic-resize postMessage), so we hide our
+         own scrollbar. Standalone (e.g. GitHub Pages, no parent to resize us) we
+         MUST scroll on our own — so only tag as embedded when we actually have a
+         parent frame. Runs synchronously during head parse, before first paint. -->
+    <script>if (window.self !== window.top) { document.documentElement.className += ' bk-embedded'; }</script>
+
     <!-- Stylesheets — all self-hosted (no external CDN / Google Fonts; GDPR + speed) -->
     <link rel="stylesheet" href="css/vendor/bootstrap-4.6.0.min.css?v=1" />
     <link rel="stylesheet" href="css/vendor/cropper-1.6.2.min.css?v=1" />
@@ -45,8 +52,9 @@
       /* The parent page resizes this iframe to the reported scrollHeight, so the
          iframe never needs its own scrollbar. Suppressing overflow here removes a
          transient grey vertical scrollbar that flashed on step 1 (desktop) during
-         init, before the parent caught up with the content-height change. */
-      html, body { overflow-y: hidden; }
+         init, before the parent caught up with the content-height change.
+         ONLY when embedded — standalone we must scroll ourselves (see head script). */
+      html.bk-embedded, html.bk-embedded body { overflow-y: hidden; }
 
       body {
         font-family: var(--bk-font-body);
