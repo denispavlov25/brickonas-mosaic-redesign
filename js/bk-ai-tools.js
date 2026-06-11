@@ -1182,7 +1182,14 @@
 
   // ---- mini-chat (intent-scoped, image-only) ---------------------------
 
+  // Rolling transcript fed back to the LLM for multi-turn context (so "und jetzt
+  // heller" after a recolor still makes sense). Capped; only short text, never
+  // the image. User bubbles are role "user", bot bubbles role "model".
+  var chatHistory = [];
+
   function addMsg(text, who) {
+    chatHistory.push({ role: who === "user" ? "user" : "model", text: String(text) });
+    if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
     if (!els.chatLog) return;
     var m = document.createElement("div");
     m.className = "bk-ai-msg " + (who === "user" ? "user" : "bot");
@@ -1236,10 +1243,128 @@
 
   // Maps a free-text message to one image intent, executes it, and replies.
   // Anything it can't map to an image command is refused (off-topic).
+  // ---- LLM-assisted chat (Gemini via same-origin PHP proxy) ------------
+  // The proxy (mu-plugin bk-ai-chat-proxy.php) turns one free-text message into
+  // a STRUCTURED image-edit intent. Only the chat TEXT leaves the browser — the
+  // photo never does. If the proxy is unreachable, disabled or quota'd, we fall
+  // back to routeLocal() so the chat always responds (just less cleverly).
+  // Override the endpoint for cross-origin hosting via window.BK_AI_CHAT_ENDPOINT.
+  var CHAT_ENDPOINT = (window.BK_AI_CHAT_ENDPOINT || "/wp-json/bk-ai/v1/chat");
+
+  function showTyping() {
+    if (!els.chatLog) return null;
+    var m = document.createElement("div");
+    m.className = "bk-ai-msg bot bk-ai-typing";
+    m.textContent = tr("aiChatThinking");
+    els.chatLog.appendChild(m);
+    els.chatLog.scrollTop = els.chatLog.scrollHeight;
+    return m;
+  }
+  function hideTyping(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
+
+  // POST the message + recent history (minus the just-echoed current turn) to
+  // the proxy. Resolves with a validated intent or rejects so the caller falls
+  // back. A short timeout keeps the chat snappy if the network stalls.
+  function askLLM(message) {
+    if (!window.fetch) return Promise.reject(new Error("no fetch"));
+    var ctrl = ("AbortController" in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 12000) : null;
+    var history = chatHistory.slice(0, -1).slice(-6); // exclude current user msg
+    return fetch(CHAT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: message, history: history }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) throw new Error("proxy " + r.status);
+      return r.json();
+    }).then(function (d) {
+      if (!d || d.ok !== true || !d.intent || !d.intent.action) throw new Error("bad intent");
+      return d.intent;
+    });
+  }
+
+  // Validate model-returned palette/object names against what the executor can
+  // actually act on (returns the canonical word, or null to trigger a fallback).
+  function colorWord(name) {
+    if (!name) return null;
+    var c = detectColor(String(name).toLowerCase());
+    return c ? c.name : null;
+  }
+  function objWord(name) {
+    if (!name) return null;
+    var o = findObject(String(name).toLowerCase());
+    return o ? o.key : null;
+  }
+
+  // Turn a structured intent into a canonical German command and run it through
+  // routeLocal (the proven executor + replies). Conversational/ambiguous intents
+  // are answered directly with the model's German reply. Missing/invalid params
+  // fall back to routeLocal(originalText) so the regex parser gets a chance.
+  function dispatchIntent(intent, originalText) {
+    switch (intent.action) {
+      case "remove_background": routeLocal("hintergrund entfernen"); return;
+      case "grayscale":         routeLocal("graustufen"); return;
+      case "optimize":          routeLocal("optimieren"); return;
+      case "brighter":          routeLocal("heller"); return;
+      case "darker":            routeLocal("dunkler"); return;
+      case "reset":             routeLocal("zuruecksetzen"); return;
+      case "help":              addMsg(tr("aiChatGreeting"), "bot"); return;
+      case "clarify":           addMsg(intent.reply_de || tr("aiChatGreeting"), "bot"); return;
+      case "offtopic":          addMsg(intent.reply_de || tr("aiChatOffTopic"), "bot"); return;
+      case "recolor_background": {
+        var bgc = colorWord(intent.color || intent.to_color);
+        if (!bgc) { routeLocal(originalText); return; }
+        routeLocal("hintergrund " + bgc); return;
+      }
+      case "selective_recolor": {
+        var f = colorWord(intent.from_color), t = colorWord(intent.to_color);
+        if (!f || !t) { routeLocal(originalText); return; }
+        routeLocal("aus " + f + " mach " + t); return;
+      }
+      case "color_intensity": {
+        var ic = colorWord(intent.color);
+        if (!ic) { routeLocal(originalText); return; }
+        routeLocal((intent.direction === "less" ? "weniger " : "mehr ") + ic); return;
+      }
+      case "object_recolor": {
+        var ot = objWord(intent.target), oc = colorWord(intent.color || intent.to_color);
+        if (!ot || !oc) { routeLocal(originalText); return; }
+        routeLocal("faerbe " + ot + " " + oc); return;
+      }
+      case "object_remove": {
+        var rt = objWord(intent.target);
+        if (!rt) { routeLocal(originalText); return; }
+        routeLocal("entferne " + rt); return;
+      }
+      default: routeLocal(originalText); return;
+    }
+  }
+
+  // Public chat entry: echo the user, ask the LLM, dispatch — fall back to the
+  // offline parser on any proxy failure so the chat always responds.
   function handleChat(raw) {
+    var text = (raw || "").trim();
+    if (!text) return;
+    addMsg(text, "user");
+    var typing = showTyping();
+    askLLM(text).then(function (intent) {
+      hideTyping(typing);
+      dispatchIntent(intent, text);
+    })["catch"](function () {
+      hideTyping(typing);
+      routeLocal(text);
+    });
+  }
+
+  // Offline intent parser (regex/keyword). Serves two roles: (1) the fallback
+  // when the LLM proxy is unavailable, and (2) the executor that dispatchIntent
+  // feeds canonical commands into. Does NOT echo the user message — the caller
+  // already did (or, for canonical reinjection, must not).
+  function routeLocal(raw) {
     var text = (raw || "").toLowerCase().trim();
     if (!text) return;
-    addMsg(raw.trim(), "user");
 
     var hasImg = ensureBase();
     function need() {
