@@ -3601,37 +3601,6 @@ document.getElementById("download-instructions-button").addEventListener("click"
     }
 })();
 
-// Standalone PDF download: when the configurator is opened directly (top-level,
-// not embedded in the WordPress shop iframe), offer the build-instructions PDF as
-// a free direct download on the result step. Inside WordPress the configurator
-// runs in an iframe (window.self !== window.top) and the PDF stays behind the
-// order, so this panel never shows there.
-(function initStandaloneDownload() {
-    try {
-        if (window.self !== window.top) return; // embedded → keep PDF gated
-        var panel = document.getElementById("mosaic-standalone-download");
-        var btn = document.getElementById("standalone-download-pdf-button");
-        if (!panel || !btn) return;
-        panel.hidden = false;
-        btn.addEventListener("click", async function () {
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = (typeof t === "function") ? t("standaloneDownloadBusy") : "Anleitung wird erstellt …";
-            try {
-                await generateInstructions();
-            } catch (err) {
-                console.error("Standalone PDF download failed:", err);
-                alert("PDF-Erstellung fehlgeschlagen. Bitte erneut versuchen.");
-            } finally {
-                btn.disabled = false;
-                btn.textContent = orig;
-            }
-        });
-    } catch (e) {
-        console.warn("Standalone download init failed:", e);
-    }
-})();
-
 document.getElementById("download-depth-instructions-button").addEventListener("click", async () => {
     await generateDepthInstructions();
 });
