@@ -1063,9 +1063,9 @@
 
   // Bake a ready mask (any resolution) as a remove/recolor edit into a fresh
   // object layer, then recompute() (which re-applies the other active ops and
-  // re-renders, owning the busy lock until it finishes). Shared by ALL three
-  // mask sources — the COCO/OWL detector, FaceLandmarker and tap-to-segment —
-  // so "how an edit is applied" lives in exactly one place.
+  // re-renders, owning the busy lock until it finishes). Shared by BOTH mask
+  // sources — the COCO/OWL object detector and FaceLandmarker — so "how an edit
+  // is applied" lives in exactly one place.
   function bakeRegionEdit(seg, action, colorObj, dilatePx, onDone) {
     var base = workBase();
     var W = base.width, H = base.height;
@@ -1177,157 +1177,6 @@
         setBusy(false);
         runObjectEdit(fallbackMatch(part, label), action, colorObj);
       });
-    });
-  }
-
-  // ---- tap-to-select ("Bereich auswählen") -----------------------------
-  // Lets the user TAP a spot on the source photo; we flood-fill the contiguous
-  // patch of similarly-coloured pixels around it (magic wand) and recolor or
-  // remove just that. Unlike a whole-object segmenter this isolates a small
-  // DETAIL — tapping a dog's nose selects the nose, not the whole dog — and a
-  // sensitivity slider grows/shrinks the patch live. Pure pixel math, instant,
-  // no model download. lastNx/lastNy remember the tap so the slider can re-run.
-  var region = { seg: null, busy: false, lastNx: null, lastNy: null };
-
-  // Current magic-wand tolerance from the slider (euclidean RGB distance).
-  function regionTolerance() {
-    var v = els.regionTol ? parseInt(els.regionTol.value, 10) : 36;
-    return isNaN(v) ? 36 : v;
-  }
-
-  function regionStatus(text) {
-    if (!els.regionStatus) return;
-    els.regionStatus.textContent = text || "";
-    els.regionStatus.hidden = !text;
-  }
-
-  function openRegion() {
-    if (state.busy) return;
-    if (!ensureBase()) return;
-    if (!els.regionOverlay) return;
-    var base = workBase();
-    var maxW = Math.min(base.width, 520);
-    var scale = maxW / base.width;
-    var dispW = Math.round(base.width * scale), dispH = Math.round(base.height * scale);
-    els.regionCanvas.width = base.width; els.regionCanvas.height = base.height;
-    els.regionCanvas.getContext("2d").drawImage(base, 0, 0);
-    els.regionCanvas.style.width = dispW + "px"; els.regionCanvas.style.height = dispH + "px";
-    els.regionHi.width = base.width; els.regionHi.height = base.height;
-    els.regionHi.getContext("2d").clearRect(0, 0, base.width, base.height);
-    els.regionHi.style.width = dispW + "px"; els.regionHi.style.height = dispH + "px";
-    region.seg = null;
-    region.lastNx = null;
-    region.lastNy = null;
-    if (els.regionTol) els.regionTol.value = 36; // reset sensitivity each open
-    if (els.regionActions) els.regionActions.hidden = true;
-    if (els.regionMarker) els.regionMarker.hidden = true;
-    regionStatus("");
-    els.regionOverlay.hidden = false;
-    document.body.classList.add("bk-region-open");
-  }
-
-  function closeRegion() {
-    if (els.regionOverlay) els.regionOverlay.hidden = true;
-    document.body.classList.remove("bk-region-open");
-    region.seg = null;
-    if (els.regionHi) els.regionHi.getContext("2d").clearRect(0, 0, els.regionHi.width, els.regionHi.height);
-  }
-
-  // Paint a translucent green highlight of the segmented region on the overlay
-  // canvas (which sits at source resolution above the photo).
-  function drawRegionHighlight(seg) {
-    var hi = els.regionHi; if (!hi) return;
-    var W = hi.width, H = hi.height;
-    var mask = resampleMask(seg, W, H);
-    var ctx = hi.getContext("2d");
-    var img = ctx.createImageData(W, H), d = img.data;
-    for (var i = 0; i < mask.length; i++) {
-      if (mask[i]) { var q = i * 4; d[q] = 46; d[q + 1] = 125; d[q + 2] = 50; d[q + 3] = 120; }
-    }
-    ctx.putImageData(img, 0, 0);
-  }
-
-  function regionTap(ev) {
-    if (region.busy) return;
-    var cv = els.regionCanvas;
-    var rect = cv.getBoundingClientRect();
-    var pt = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
-    var cx = pt.clientX - rect.left, cy = pt.clientY - rect.top;
-    if (cx < 0 || cy < 0 || cx > rect.width || cy > rect.height) return;
-    region.lastNx = clamp01(cx / rect.width);
-    region.lastNy = clamp01(cy / rect.height);
-    if (els.regionMarker) {
-      els.regionMarker.style.left = cx + "px";
-      els.regionMarker.style.top = cy + "px";
-      els.regionMarker.hidden = false;
-    }
-    runRegionSelect();
-  }
-
-  // Flood-fill the patch around the last tap at the current tolerance and show
-  // the highlight + actions. Re-callable from the sensitivity slider, so the
-  // user can dial the selection in without re-tapping.
-  function runRegionSelect() {
-    if (region.lastNx == null) return;
-    if (!window.bkRegion || !window.bkRegion.floodSelect) { regionStatus(tr("regionUnavailable")); return; }
-    region.busy = true;
-    regionStatus(tr("regionDetecting"));
-    var base = workBase();
-    var nx = region.lastNx, ny = region.lastNy, tol = regionTolerance();
-    requestAnimationFrame(function () {
-      try {
-        var seg = window.bkRegion.floodSelect(base, nx, ny, tol);
-        region.busy = false;
-        if (!seg || seg.coverage < 0.00005) {
-          region.seg = null;
-          if (els.regionActions) els.regionActions.hidden = true;
-          regionStatus(tr("regionNothing"));
-          return;
-        }
-        region.seg = seg;
-        drawRegionHighlight(seg);
-        regionStatus("");
-        if (els.regionActions) els.regionActions.hidden = false;
-      } catch (e) {
-        region.busy = false;
-        regionStatus(tr("regionUnavailable"));
-      }
-    });
-  }
-
-  // Bake the selected region as a recolor (colorObj) or remove (null), then
-  // close the overlay; bakeRegionEdit owns the busy lock + re-render.
-  function applyRegionEdit(action, colorObj) {
-    if (!region.seg) return;
-    var seg = region.seg;
-    var label = tr("regionThis");
-    closeRegion();
-    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
-    setBusy(true);
-    requestAnimationFrame(function () {
-      bakeRegionEdit(seg, action, colorObj, 2, function () {
-        if (action === "remove") addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
-        else addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
-      });
-    });
-  }
-
-  // Build the colour swatches inside the region overlay (mirror of the bg row).
-  function buildRegionSwatches() {
-    if (!els.regionSwatches) return;
-    els.regionSwatches.innerHTML = "";
-    COLORS.forEach(function (col) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.className = "bk-ai-swatch";
-      b.style.background = col.hex;
-      b.title = col.name;
-      b.setAttribute("aria-label", col.name);
-      b.addEventListener("click", function () {
-        if (region.busy) return;
-        applyRegionEdit("recolor", col);
-      });
-      els.regionSwatches.appendChild(b);
     });
   }
 
@@ -1585,23 +1434,7 @@
     els.input = document.getElementById("bk-ai-chat-input");
     els.send = document.getElementById("bk-ai-chat-send");
 
-    // Tap-to-segment ("Bereich auswählen") overlay nodes.
-    els.regionBtn = document.getElementById("bk-ai-region");
-    els.regionOverlay = document.getElementById("bk-region-overlay");
-    els.regionCanvas = document.getElementById("bk-region-canvas");
-    els.regionHi = document.getElementById("bk-region-hi");
-    els.regionMarker = document.getElementById("bk-region-marker");
-    els.regionStage = document.getElementById("bk-region-stage");
-    els.regionActions = document.getElementById("bk-region-actions");
-    els.regionSwatches = document.getElementById("bk-region-swatches");
-    els.regionStatus = document.getElementById("bk-region-status");
-    els.regionRemove = document.getElementById("bk-region-remove");
-    els.regionRedo = document.getElementById("bk-region-redo");
-    els.regionClose = document.getElementById("bk-region-close");
-    els.regionTol = document.getElementById("bk-region-tol");
-
     buildSwatches();
-    buildRegionSwatches();
 
     if (els.optimize) els.optimize.addEventListener("click", function () {
       if (state.busy) return;
@@ -1633,50 +1466,6 @@
       var v = els.input ? els.input.value : "";
       if (els.input) els.input.value = "";
       handleChat(v);
-    });
-
-    // Tap-to-segment overlay wiring.
-    if (els.regionBtn) els.regionBtn.addEventListener("click", function () {
-      if (state.busy) return;
-      if (!ensureBase()) return;
-      openRegion();
-    });
-    if (els.regionClose) els.regionClose.addEventListener("click", closeRegion);
-    if (els.regionStage) {
-      els.regionStage.addEventListener("click", regionTap);
-      // Tap support without firing a duplicate synthetic click.
-      els.regionStage.addEventListener("touchstart", function (e) {
-        e.preventDefault();
-        regionTap(e);
-      }, { passive: false });
-    }
-    if (els.regionRemove) els.regionRemove.addEventListener("click", function () {
-      if (region.busy) return;
-      applyRegionEdit("remove", null);
-    });
-    if (els.regionRedo) els.regionRedo.addEventListener("click", function () {
-      if (region.busy) return;
-      region.seg = null;
-      region.lastNx = null;
-      region.lastNy = null;
-      if (els.regionActions) els.regionActions.hidden = true;
-      if (els.regionMarker) els.regionMarker.hidden = true;
-      if (els.regionHi) els.regionHi.getContext("2d").clearRect(0, 0, els.regionHi.width, els.regionHi.height);
-      regionStatus("");
-    });
-    // Sensitivity slider re-runs the magic wand on the last tap (debounced so a
-    // drag doesn't fire a flood fill per pixel).
-    if (els.regionTol) {
-      var tolTimer = null;
-      els.regionTol.addEventListener("input", function () {
-        if (region.lastNx == null) return;
-        if (tolTimer) clearTimeout(tolTimer);
-        tolTimer = setTimeout(runRegionSelect, 70);
-      });
-    }
-    // Close on backdrop click (but not when clicking inside the modal).
-    if (els.regionOverlay) els.regionOverlay.addEventListener("click", function (e) {
-      if (e.target === els.regionOverlay) closeRegion();
     });
 
     // Reveal the panel + seed the chat greeting when the user reaches step 2

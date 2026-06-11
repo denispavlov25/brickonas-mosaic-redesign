@@ -729,72 +729,6 @@
         .bk-ai-btn { flex: 1 1 100%; }
       }
 
-      /* === TAP-TO-SEGMENT OVERLAY (step 2, "Bereich auswählen") === */
-      .bk-region-overlay {
-        position: fixed; inset: 0; z-index: 2147483000;
-        display: flex; align-items: center; justify-content: center;
-        padding: 20px; background: rgba(20, 32, 22, 0.55);
-        -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
-      }
-      .bk-region-overlay[hidden] { display: none; }
-      body.bk-region-open { overflow: hidden; }
-      .bk-region-modal {
-        background: var(--bk-white, #fff); border-radius: 18px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
-        width: 100%; max-width: 580px; max-height: 92vh; overflow-y: auto;
-        padding: 20px 22px 22px;
-      }
-      .bk-region-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-      .bk-region-head strong { font-family: Fredoka, sans-serif; font-size: 1.15rem; color: var(--bk-dark, #1a2e1c); }
-      .bk-region-close {
-        flex-shrink: 0; width: 34px; height: 34px; display: inline-flex;
-        align-items: center; justify-content: center; border: none;
-        border-radius: 9px; background: #f0f4f0; color: #5a655c; cursor: pointer;
-        transition: background 0.15s, color 0.15s;
-      }
-      .bk-region-close:hover { background: #e3ebe3; color: #1a2e1c; }
-      .bk-region-hint { font-size: 0.9rem; color: var(--bk-dark-gray, #5a655c); margin: 0 0 12px; }
-      .bk-region-stage {
-        position: relative; display: inline-block; max-width: 100%;
-        line-height: 0; border-radius: 12px; overflow: hidden;
-        cursor: crosshair; touch-action: none;
-        box-shadow: inset 0 0 0 1px rgba(46, 125, 50, 0.18);
-      }
-      .bk-region-stage #bk-region-canvas { display: block; max-width: 100%; }
-      .bk-region-stage #bk-region-hi {
-        position: absolute; left: 0; top: 0; pointer-events: none;
-      }
-      .bk-region-marker {
-        position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px;
-        border: 2px solid #fff; border-radius: 50%;
-        background: rgba(46, 125, 50, 0.7); box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.8);
-        pointer-events: none;
-      }
-      .bk-region-status {
-        margin-top: 12px; font-size: 0.9rem; font-weight: 600;
-        color: var(--bk-green-primary, #2e7d32);
-      }
-      .bk-region-actions { margin-top: 16px; }
-      .bk-region-tolrow { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-      .bk-region-tol-label { font-size: 0.85rem; font-weight: 600; color: var(--bk-dark-gray, #5a655c); white-space: nowrap; }
-      .bk-region-tol { flex: 1 1 auto; accent-color: var(--bk-green-primary, #2e7d32); cursor: pointer; }
-      .bk-region-swatch-label { font-size: 0.85rem; font-weight: 600; color: var(--bk-dark-gray, #5a655c); margin-bottom: 8px; }
-      .bk-region-actions .bk-ai-swatch-row { margin-bottom: 14px; }
-      .bk-region-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
-      .bk-region-btn {
-        flex: 1 1 auto; padding: 11px 16px; border-radius: 11px;
-        font-weight: 700; font-size: 0.92rem; cursor: pointer;
-        border: 1px solid transparent; transition: background 0.15s, border-color 0.15s, transform 0.12s;
-      }
-      .bk-region-btn:hover { transform: translateY(-1px); }
-      .bk-region-btn-remove { background: #fbeaea; color: #b3261e; border-color: #f3cfcf; }
-      .bk-region-btn-remove:hover { background: #f7dede; }
-      .bk-region-btn-redo { background: #eef6ee; color: var(--bk-green-dark, #1b5e20); border-color: rgba(46, 125, 50, 0.22); }
-      .bk-region-btn-redo:hover { background: #e3efe3; }
-      @media (max-width: 540px) {
-        .bk-region-modal { padding: 16px 16px 18px; border-radius: 14px; }
-      }
-
       /* === DESIGN SERVICE CTA (step 2, collapsible escape hatch) === */
       .bk-designservice-details {
         margin-top: 26px;
@@ -2044,15 +1978,6 @@
                     </span>
                     <span class="bk-ai-btn-tx"><span data-i18n="aiRemoveBg">Hintergrund entfernen</span><small data-i18n="aiRemoveBgHint">Motiv freistellen</small></span>
                   </button>
-                  <!-- Tap-to-select: pick any detail on the photo (a nose, a
-                       flower, a patch of sky) and recolor or remove it. Runs an
-                       on-device colour flood-fill (magic wand) via js/bk-ai-region.js. -->
-                  <button type="button" class="bk-ai-btn bk-ai-btn-secondary" id="bk-ai-region">
-                    <span class="bk-ai-btn-ico" aria-hidden="true">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M3 15v4a2 2 0 0 0 2 2h4"/><circle cx="12" cy="12" r="3"/></svg>
-                    </span>
-                    <span class="bk-ai-btn-tx"><span data-i18n="aiRegion">Bereich auswählen</span><small data-i18n="aiRegionHint">Stelle antippen &amp; ändern</small></span>
-                  </button>
                 </div>
                 <button type="button" class="bk-ai-reset" id="bk-ai-reset">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
@@ -2077,40 +2002,6 @@
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
                   </form>
-                </div>
-              </div>
-
-              <!-- Tap-to-select overlay: shows the source photo so the user can
-                   tap the exact spot to edit. A colour flood-fill (magic wand)
-                   isolates that detail on-device; a sensitivity slider grows /
-                   shrinks it; then recolor / remove. -->
-              <div class="bk-region-overlay" id="bk-region-overlay" hidden>
-                <div class="bk-region-modal" role="dialog" aria-modal="true" aria-labelledby="bk-region-title">
-                  <div class="bk-region-head">
-                    <strong id="bk-region-title" data-i18n="regionTitle">Bereich auswählen</strong>
-                    <button type="button" class="bk-region-close" id="bk-region-close" aria-label="Schließen">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </div>
-                  <p class="bk-region-hint" data-i18n="regionHint">Tippe auf die Stelle im Bild, die du ändern möchtest.</p>
-                  <div class="bk-region-stage" id="bk-region-stage">
-                    <canvas id="bk-region-canvas"></canvas>
-                    <canvas id="bk-region-hi"></canvas>
-                    <div class="bk-region-marker" id="bk-region-marker" hidden></div>
-                  </div>
-                  <div class="bk-region-status" id="bk-region-status" hidden></div>
-                  <div class="bk-region-actions" id="bk-region-actions" hidden>
-                    <div class="bk-region-tolrow">
-                      <label class="bk-region-tol-label" for="bk-region-tol" data-i18n="regionTol">Auswahl-Empfindlichkeit:</label>
-                      <input type="range" class="bk-region-tol" id="bk-region-tol" min="10" max="90" value="36" step="2">
-                    </div>
-                    <div class="bk-region-swatch-label" data-i18n="regionPickColor">Neue Farbe wählen:</div>
-                    <div class="bk-ai-swatch-row" id="bk-region-swatches"></div>
-                    <div class="bk-region-buttons">
-                      <button type="button" class="bk-region-btn bk-region-btn-remove" id="bk-region-remove" data-i18n="regionRemove">Entfernen</button>
-                      <button type="button" class="bk-region-btn bk-region-btn-redo" id="bk-region-redo" data-i18n="regionRedo">Andere Stelle</button>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2467,13 +2358,13 @@
     <script src="js/bricklink-colors.js?v=1"></script>
     <script src="js/stud-maps.js?v=1"></script>
     <script src="js/heap.js"></script>
-    <script src="js/i18n.js?v=38"></script>
+    <script src="js/i18n.js?v=39"></script>
     <script src="js/algo.js?v=28"></script>
     <script src="js/instructions-vector.js?v=1"></script>
     <script src="js/index.js?v=66"></script>
     <script src="js/bk-ai-segment.js?v=2"></script>
-    <script src="js/bk-ai-region.js?v=3"></script>
-    <script src="js/bk-ai-tools.js?v=13"></script>
+    <script src="js/bk-ai-region.js?v=4"></script>
+    <script src="js/bk-ai-tools.js?v=14"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing

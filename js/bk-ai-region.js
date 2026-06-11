@@ -1,28 +1,19 @@
 /*
- * BRICKONAS — on-device region tools (step 2 precise editing)
+ * BRICKONAS — on-device face-part masks (step 2 precise editing)
  * ------------------------------------------------------------------
- * Two complementary, fully in-browser features that the coarse OWL-ViT
- * object detector can't do well:
+ * facePartMask(canvas, part) builds a precise eyes / nose / lips / eyebrows
+ * mask from MediaPipe FaceLandmarker's 468 landmarks — the on-device model
+ * the coarse OWL-ViT object detector can't match on small facial parts, for
+ * the most common mosaic subject: human portraits. The chat ("Lippen rot",
+ * "Augen blau machen") drives it; the resulting mask is baked by bk-ai-tools.
  *
- *   1. floodSelect(canvas, nx, ny, tol)  — "magic wand": the user taps a
- *      spot and we flood-fill the CONTIGUOUS patch of similarly coloured
- *      pixels around it (a dog's black nose, one flower petal, a patch of
- *      sky …). Unlike a whole-object segmenter, this isolates a small
- *      detail — tapping a nose selects the nose, not the whole dog — and
- *      a tolerance slider lets the user grow/shrink the selection. Pure
- *      pixel math: instant, deterministic, no model download.
+ * It reuses the SAME self-hosted MediaPipe vision bundle + wasm already
+ * shipped for the selfie segmenter (js/vendor/mediapipe/), so there are zero
+ * external hosts and the photo never leaves the browser. The only new bytes
+ * are the face model under assets/ml/, lazy-loaded the first time a face-part
+ * edit runs (nothing downloads otherwise).
  *
- *   2. facePartMask(canvas, part)      — precise eyes / nose / lips /
- *      eyebrows mask from MediaPipe FaceLandmarker's 468 landmarks, for
- *      the most common mosaic subject: human portraits.
- *
- * facePartMask reuses the SAME self-hosted MediaPipe vision bundle + wasm
- * already shipped for the selfie segmenter (js/vendor/mediapipe/), so
- * there are zero external hosts and the photo never leaves the browser.
- * The only new bytes are the face model under assets/ml/, lazy-loaded the
- * first time a face-part edit runs (nothing downloads otherwise).
- *
- * Public API: window.bkRegion.{ floodSelect, facePartMask, preload }.
+ * Public API: window.bkRegion.{ facePartMask, preload }.
  */
 (function () {
   "use strict";
@@ -41,65 +32,6 @@
     if (!bundlePromise) bundlePromise = import(BUNDLE);
     bundlePromise.catch(function () { bundlePromise = null; });
     return bundlePromise;
-  }
-
-  // ---- magic-wand flood fill (tap-to-select a detail) ------------------
-  // Select the contiguous run of pixels around (nx, ny in 0..1) whose colour
-  // is within `tol` (euclidean RGB distance) of the tapped colour. Returns
-  // { mask: Uint8Array(w*h; 1 = selected), w, h, coverage }. Runs on a copy
-  // downscaled to <=maxDim px (the mosaic re-quantises the result anyway), so
-  // even a large photo selects in a few ms with no jank.
-  function floodSelect(canvas, nx, ny, tol) {
-    var maxDim = 480;
-    var sw = canvas.width, sh = canvas.height;
-    var scale = Math.min(1, maxDim / Math.max(sw, sh));
-    var w = Math.max(1, Math.round(sw * scale));
-    var h = Math.max(1, Math.round(sh * scale));
-    var cv = document.createElement("canvas");
-    cv.width = w; cv.height = h;
-    var ctx = cv.getContext("2d");
-    ctx.drawImage(canvas, 0, 0, w, h);
-    var d = ctx.getImageData(0, 0, w, h).data;
-
-    var sx = Math.min(w - 1, Math.max(0, Math.round(nx * w)));
-    var sy = Math.min(h - 1, Math.max(0, Math.round(ny * h)));
-
-    // Seed = average of a 3×3 neighbourhood so a single noisy pixel doesn't
-    // throw the colour match off.
-    var sr = 0, sg = 0, sb = 0, sc = 0, dx, dy, xx, yy, p;
-    for (dy = -1; dy <= 1; dy++) {
-      for (dx = -1; dx <= 1; dx++) {
-        xx = sx + dx; yy = sy + dy;
-        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-        p = (yy * w + xx) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; sc++;
-      }
-    }
-    sr /= sc; sg /= sc; sb /= sc;
-
-    var tol2 = tol * tol;
-    var mask = new Uint8Array(w * h);
-    var seed = sy * w + sx;
-    var stack = [seed];
-    mask[seed] = 1;
-    var fg = 0;
-    while (stack.length) {
-      var idx = stack.pop();
-      fg++;
-      var x = idx % w, y = (idx / w) | 0;
-      var nb;
-      // 4-connectivity keeps the selection tight (no diagonal colour bleed).
-      for (var n = 0; n < 4; n++) {
-        if (n === 0) { if (x === 0) continue; nb = idx - 1; }
-        else if (n === 1) { if (x === w - 1) continue; nb = idx + 1; }
-        else if (n === 2) { if (y === 0) continue; nb = idx - w; }
-        else { if (y === h - 1) continue; nb = idx + w; }
-        if (mask[nb]) continue;
-        var q = nb * 4;
-        var er = d[q] - sr, eg = d[q + 1] - sg, eb = d[q + 2] - sb;
-        if (er * er + eg * eg + eb * eb <= tol2) { mask[nb] = 1; stack.push(nb); }
-      }
-    }
-    return { mask: mask, w: w, h: h, coverage: fg / (w * h) };
   }
 
   // ---- FaceLandmarker (face-part masks) --------------------------------
@@ -278,7 +210,6 @@
   }
 
   window.bkRegion = {
-    floodSelect: floodSelect,
     facePartMask: facePartMask,
     preload: preload
   };
