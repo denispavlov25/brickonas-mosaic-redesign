@@ -42,12 +42,19 @@
 
       * { box-sizing: border-box; }
 
+      /* The parent page resizes this iframe to the reported scrollHeight, so the
+         iframe never needs its own scrollbar. Suppressing overflow here removes a
+         transient grey vertical scrollbar that flashed on step 1 (desktop) during
+         init, before the parent caught up with the content-height change. */
+      html, body { overflow-y: hidden; }
+
       body {
         font-family: var(--bk-font-body);
         background: var(--bk-off-white);
         color: var(--bk-charcoal);
         margin: 0;
         padding: 0;
+        overflow-x: hidden;
       }
 
       /* === PAGE LAYOUT === */
@@ -544,43 +551,132 @@
         .bk-style-tile-label { font-size: 0.7rem; }
       }
 
+      /* === MODE SWITCH (step 2: Automatisch / Selbst bearbeiten) === */
+      .bk-mode-switch {
+        display: flex;
+        gap: 6px;
+        padding: 5px;
+        margin: 4px 0 18px;
+        background: #f1f5f1;
+        border: 1px solid rgba(46, 125, 50, 0.16);
+        border-radius: calc(var(--bk-radius-md, 14px) + 2px);
+      }
+      .bk-mode-tab {
+        flex: 1 1 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 11px 14px;
+        background: transparent;
+        color: var(--bk-dark-gray, #5a655c);
+        border: none;
+        border-radius: var(--bk-radius-md, 14px);
+        font-family: var(--bk-font-heading, Fredoka, sans-serif);
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        cursor: pointer;
+        transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+      }
+      .bk-mode-tab-icon { font-size: 1.05rem; line-height: 1; }
+      .bk-mode-tab:hover { color: var(--bk-green-dark, #1b5e20); }
+      .bk-mode-tab.is-active {
+        background: var(--bk-white, #fff);
+        color: var(--bk-green-dark, #1b5e20);
+        box-shadow: 0 2px 8px rgba(46, 125, 50, 0.18);
+      }
+      .bk-mode-panel[hidden] { display: none; }
+      .bk-mode-hint {
+        margin: 0 0 12px;
+        font-size: 0.86rem;
+        line-height: 1.45;
+        color: var(--bk-dark-gray, #5a655c);
+      }
+      @media (max-width: 540px) {
+        .bk-mode-tab { padding: 10px 8px; font-size: 0.88rem; gap: 5px; }
+      }
+
       /* === KI-BILDWERKZEUGE (step 2) === */
       .bk-ai-tools {
         margin-top: 18px;
-        padding: 18px 18px 16px;
-        background: linear-gradient(180deg, var(--bk-green-pale, #eef6ee) 0%, #ffffff 70%);
-        border: 1px solid rgba(46, 125, 50, 0.18);
+        padding: 20px;
+        background: var(--bk-white, #fff);
+        border: 1px solid rgba(46, 125, 50, 0.16);
         border-radius: var(--bk-radius-md, 14px);
+        box-shadow: 0 2px 14px rgba(27, 94, 32, 0.06);
       }
-      .bk-ai-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+      .bk-ai-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
       .bk-ai-head strong {
         font-family: var(--bk-font-heading, Fredoka, sans-serif);
-        font-size: 1.08rem;
+        font-size: 1.1rem;
         font-weight: 600;
         color: var(--bk-green-dark, #1b5e20);
         letter-spacing: 0.2px;
       }
       .bk-ai-head span { font-size: 0.84rem; color: var(--bk-dark-gray, #5a655c); line-height: 1.45; }
-      .bk-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .bk-ai-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      /* Two distinct primary tasks rendered as icon tiles so they read as two
+         different actions (not three look-alike buttons). */
       .bk-ai-btn {
-        flex: 1 1 auto;
-        min-width: 140px;
-        padding: 10px 14px;
-        background: var(--bk-white, #fff);
-        color: var(--bk-green-dark, #1b5e20);
-        border: 1.5px solid var(--bk-green-primary, #2e7d32);
+        flex: 1 1 200px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
         border-radius: var(--bk-radius-sm, 9px);
         font-family: var(--bk-font-body, sans-serif);
-        font-size: 0.88rem;
+        font-size: 0.9rem;
         font-weight: 700;
+        text-align: left;
         cursor: pointer;
-        transition: background 0.18s, color 0.18s, transform 0.12s, box-shadow 0.18s;
+        transition: transform 0.12s, box-shadow 0.18s, background 0.18s, border-color 0.18s;
       }
-      .bk-ai-btn:hover { background: var(--bk-green-primary, #2e7d32); color: #fff; transform: translateY(-1px); box-shadow: 0 3px 9px rgba(46, 125, 50, 0.25); }
-      .bk-ai-btn.is-active { background: var(--bk-green-primary, #2e7d32); color: #fff; }
-      .bk-ai-btn.bk-ai-reset { flex: 0 1 auto; min-width: 0; border-color: #cfd8cf; color: var(--bk-dark-gray, #5a655c); }
-      .bk-ai-btn.bk-ai-reset:hover { background: #eceff0; color: #2a352b; box-shadow: none; }
+      .bk-ai-btn .bk-ai-btn-ico {
+        flex-shrink: 0;
+        width: 38px; height: 38px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 10px;
+        transition: background 0.18s, color 0.18s;
+      }
+      .bk-ai-btn .bk-ai-btn-tx { display: flex; flex-direction: column; gap: 2px; line-height: 1.2; }
+      .bk-ai-btn .bk-ai-btn-tx small { font-size: 0.74rem; font-weight: 500; opacity: 0.8; }
+      /* Primary: filled green — the recommended one-click action. */
+      .bk-ai-btn-primary {
+        background: linear-gradient(135deg, #33913a 0%, #2e7d32 55%, #236b2a 100%);
+        color: #fff; border: none;
+        box-shadow: 0 3px 10px rgba(46, 125, 50, 0.28);
+      }
+      .bk-ai-btn-primary .bk-ai-btn-ico { background: rgba(255, 255, 255, 0.2); color: #fff; }
+      .bk-ai-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(46, 125, 50, 0.34); }
+      .bk-ai-btn-primary.is-active { background: var(--bk-green-dark, #1b5e20); }
+      /* Secondary: outlined white card — clearly a different, optional action. */
+      .bk-ai-btn-secondary {
+        background: var(--bk-white, #fff);
+        color: #2a352b;
+        border: 1.5px solid rgba(46, 125, 50, 0.28);
+      }
+      .bk-ai-btn-secondary .bk-ai-btn-ico { background: var(--bk-green-pale, #eef6ee); color: var(--bk-green-primary, #2e7d32); }
+      .bk-ai-btn-secondary:hover { transform: translateY(-2px); border-color: var(--bk-green-primary, #2e7d32); box-shadow: 0 4px 12px rgba(46, 125, 50, 0.16); }
+      .bk-ai-btn-secondary.is-active { background: var(--bk-green-pale, #eef6ee); border-color: var(--bk-green-primary, #2e7d32); color: var(--bk-green-dark, #1b5e20); }
+      .bk-ai-btn-secondary.is-active .bk-ai-btn-ico { background: var(--bk-green-primary, #2e7d32); color: #fff; }
       .bk-ai-btn:disabled { opacity: 0.55; cursor: progress; transform: none; box-shadow: none; }
+      /* Reset: quiet tertiary text button, set apart so it can't be confused
+         with the two action tiles above. */
+      .bk-ai-reset {
+        display: inline-flex; align-items: center; gap: 7px;
+        margin: 12px 0 0 auto;
+        padding: 7px 12px;
+        background: transparent;
+        color: var(--bk-dark-gray, #5a655c);
+        border: none; border-radius: 8px;
+        font-family: var(--bk-font-body, sans-serif);
+        font-size: 0.82rem; font-weight: 600;
+        cursor: pointer; transition: background 0.16s, color 0.16s;
+      }
+      .bk-ai-reset svg { width: 15px; height: 15px; }
+      .bk-ai-reset:hover { background: #f0f3f0; color: #2a352b; }
+      .bk-ai-reset:disabled { opacity: 0.5; cursor: progress; }
       .bk-ai-status { display: none; margin-top: 10px; padding: 8px 12px; font-size: 0.82rem; line-height: 1.4; color: var(--bk-green, #1E6B30); background: rgba(30, 107, 48, 0.08); border: 1px solid rgba(30, 107, 48, 0.18); border-radius: 8px; }
       .bk-ai-status.is-visible { display: block; }
       .bk-ai-swatches { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -593,8 +689,23 @@
       }
       .bk-ai-swatch:hover { transform: scale(1.12); }
       .bk-ai-swatch.is-active { box-shadow: 0 0 0 2px var(--bk-green-primary, #2e7d32); }
-      .bk-ai-chat { margin-top: 14px; border-top: 1px dashed rgba(46, 125, 50, 0.22); padding-top: 12px; }
-      .bk-ai-chat-log { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; }
+      .bk-ai-chat-toggle {
+        display: flex; align-items: center; gap: 9px;
+        width: 100%; margin-top: 16px; padding: 12px 15px;
+        background: var(--bk-white, #fff);
+        color: var(--bk-green-dark, #1b5e20);
+        border: 1.5px dashed rgba(46, 125, 50, 0.42);
+        border-radius: var(--bk-radius-sm, 9px);
+        font-family: var(--bk-font-body, sans-serif);
+        font-size: 0.88rem; font-weight: 700;
+        cursor: pointer; transition: background 0.18s, border-color 0.18s;
+      }
+      .bk-ai-chat-toggle:hover { background: var(--bk-green-pale, #eef6ee); border-color: var(--bk-green-primary, #2e7d32); }
+      .bk-ai-chat-toggle::after { content: "\25BE"; margin-left: auto; font-size: 0.85rem; color: var(--bk-dark-gray, #5a655c); transition: transform 0.2s; }
+      .bk-ai-chat-toggle[aria-expanded="true"]::after { transform: rotate(180deg); }
+      .bk-ai-chat[hidden] { display: none; }
+      .bk-ai-chat { margin-top: 12px; }
+      .bk-ai-chat-log { display: flex; flex-direction: column; gap: 8px; min-height: 130px; max-height: 280px; overflow-y: auto; margin-bottom: 12px; padding: 12px; background: var(--bk-white, #fff); border: 1px solid rgba(46, 125, 50, 0.16); border-radius: 12px; }
       .bk-ai-msg { max-width: 88%; padding: 7px 11px; border-radius: 12px; font-size: 0.84rem; line-height: 1.4; }
       .bk-ai-msg.bot { align-self: flex-start; background: var(--bk-green-pale, #eef6ee); color: #2a352b; border-bottom-left-radius: 4px; }
       .bk-ai-msg.user { align-self: flex-end; background: var(--bk-green-primary, #2e7d32); color: #fff; border-bottom-right-radius: 4px; }
@@ -616,16 +727,54 @@
       .bk-ai-chat-send:hover { background: var(--bk-green-dark, #1b5e20); transform: translateY(-1px); }
       @media (max-width: 540px) {
         .bk-ai-btn { flex: 1 1 100%; }
-        .bk-ai-btn.bk-ai-reset { flex: 1 1 100%; }
       }
 
-      /* === DESIGN SERVICE CTA (step 2) === */
+      /* === DESIGN SERVICE CTA (step 2, collapsible escape hatch) === */
+      .bk-designservice-details {
+        margin-top: 26px;
+        border: 1px solid rgba(46, 125, 50, 0.16);
+        border-radius: var(--bk-radius-md);
+        background: #fbfdfb;
+        overflow: hidden;
+        outline: none;
+      }
+      .bk-designservice-details[open] .bk-ds-summary {
+        border-bottom: 1px solid rgba(46, 125, 50, 0.14);
+      }
+      .bk-ds-summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        list-style: none;
+        cursor: pointer;
+        font-family: var(--bk-font-body, sans-serif);
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--bk-green-dark, #1b5e20);
+        transition: background 0.18s;
+        outline: none;
+      }
+      /* Keyboard focus keeps a clear ring; mouse-click does not (base rule above
+         already clears the default blue outline for all states). */
+      .bk-ds-summary:focus-visible { box-shadow: inset 0 0 0 2px rgba(46, 125, 50, 0.4); }
+      .bk-ds-summary:hover { background: var(--bk-green-pale, #eef6ee); }
+      .bk-ds-summary::-webkit-details-marker { display: none; }
+      .bk-ds-summary-icon { font-size: 1.05rem; line-height: 1; }
+      .bk-ds-summary::after {
+        content: "▾";
+        margin-left: auto;
+        font-size: 0.9rem;
+        color: var(--bk-dark-gray, #5a655c);
+        transition: transform 0.2s;
+      }
+      .bk-designservice-details[open] .bk-ds-summary::after { transform: rotate(180deg); }
       .bk-designservice {
         display: flex;
         align-items: center;
         gap: 20px;
-        padding: 16px 18px 16px 20px;
-        margin-top: 18px;
+        padding: 18px 18px 18px 20px;
+        margin: 16px 16px 18px;
         background: var(--bk-green-pale);
         border-left: 4px solid var(--bk-green-primary);
         border-radius: var(--bk-radius-md);
@@ -1768,133 +1917,184 @@
         <div id="visual-step-2" class="visual-step" hidden>
           <div class="mosaic-card">
             <div class="mosaic-step-title" data-i18n="refineColors">Farben verfeinern</div>
-            <div class="mosaic-step-subtitle" data-i18n="refineColorsSubtitle">Bearbeite einzelne Pixel mit dem Pinsel, um dein Mosaik zu perfektionieren</div>
+            <div class="mosaic-step-subtitle" data-i18n="refineColorsSubtitle">Schau dir die Vorschau an und verfeinere sie – ganz automatisch oder selbst.</div>
 
-            <!-- Style picker -->
-            <div class="bk-style-picker" id="bk-style-picker" hidden>
-              <div class="bk-style-picker-label" data-i18n="stylePickerLabel">Wähle einen Stil</div>
-              <div class="bk-style-picker-grid" id="bk-style-picker-grid"></div>
-            </div>
-
-            <!-- Canvas with pixelated mosaic -->
+            <!-- Canvas with pixelated mosaic — always visible at the top so the
+                 user keeps the live preview in sight regardless of the mode. -->
             <div class="mosaic-canvas-area" style="margin-bottom: 16px;">
               <canvas id="step-3-canvas" hidden></canvas>
               <canvas id="step-3-canvas-upscaled" style=""></canvas>
             </div>
 
-            <!-- Paintbrush Tools -->
-            <div class="mosaic-tools-label">Pixel bearbeiten</div>
-            <div class="mosaic-tools-bar">
-              <div class="btn-group">
-                <button class="btn dropdown-toggle paintbrush-controls-button" type="button" id="paintbrush-tool-selection-dropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.067 6.067 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.118 8.118 0 0 1-3.078.132 3.659 3.659 0 0 1-.562-.135 1.382 1.382 0 0 1-.466-.247.714.714 0 0 1-.204-.288.622.622 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896.126.007.243.025.348.048.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04z"/></svg>
-                </button>
-                <div class="dropdown-menu" id="paintbrush-tool-selection-dropdown-options">
-                  <a class="dropdown-item btn" id="paintbrush-tool-dropdown-option"><span data-i18n="paintbrush">Pinsel</span></a>
-                  <a class="dropdown-item btn" id="eraser-tool-dropdown-option"><span data-i18n="eraser">Radierer</span></a>
-                  <a class="dropdown-item btn" id="dropdown-tool-dropdown-option"><span data-i18n="dropper">Pipette</span></a>
-                </div>
-              </div>
-              <span id="paintbrush-controls"> </span>
-              <button class="btn paintbrush-controls-button" type="button" id="clear-overrides-button" data-toggle="tooltip" title="Alle Pinseländerungen löschen" data-placement="top">
-                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/></svg>
+            <!-- Mode switch: separates the two editing paths (progressive
+                 disclosure). "Automatisch" = KI helpers + style picker (default);
+                 "Selbst bearbeiten" = manual paintbrush. Only one panel shows at
+                 a time so the screen stays focused on a single task. -->
+            <div class="bk-mode-switch" id="bk-mode-switch" role="tablist" aria-label="Bearbeitungsmodus">
+              <button type="button" class="bk-mode-tab is-active" id="bk-mode-tab-auto" role="tab" aria-selected="true" aria-controls="bk-mode-auto" data-mode="auto">
+                <span class="bk-mode-tab-icon" aria-hidden="true">✨</span>
+                <span data-i18n="modeAuto">Automatisch</span>
+              </button>
+              <button type="button" class="bk-mode-tab" id="bk-mode-tab-manual" role="tab" aria-selected="false" aria-controls="bk-mode-manual" data-mode="manual">
+                <span class="bk-mode-tab-icon" aria-hidden="true">🖌️</span>
+                <span data-i18n="modeManual">Selbst bearbeiten</span>
               </button>
             </div>
 
-            <!-- Piece Stats (hidden) -->
-            <div id="custom-stud-map-controls" style="display:none;">
-              <div class="mosaic-piece-stats">
-                <div class="mosaic-piece-stat">
-                  <div class="stat-value" id="required-studs">0</div>
-                  <div class="stat-label" data-i18n="requiredPieces">Erforderlich</div>
-                </div>
-                <div class="mosaic-piece-stat">
-                  <div class="stat-value" id="available-studs">0</div>
-                  <div class="stat-label" data-i18n="availablePieces">Verfügbar</div>
-                </div>
-                <div class="mosaic-piece-stat">
-                  <div class="stat-value" id="missing-studs">0</div>
-                  <div class="stat-label" data-i18n="missingPiecesLabel">Fehlend</div>
-                </div>
-              </div>
-            </div>
+            <!-- ============ AUTO MODE PANEL (default) ============ -->
+            <div class="bk-mode-panel" id="bk-mode-auto" role="tabpanel" aria-labelledby="bk-mode-tab-auto">
+              <p class="bk-mode-hint" data-i18n="modeAutoHint">Lass die KI dein Foto fürs Mosaik optimieren – alles passiert direkt in deinem Browser.</p>
 
-            <!-- Available Colors (hidden, kept for JS) -->
-            <div style="display:none;">
-              <div class="mosaic-checkbox" id="infinite-piece-count-check-container">
-                <input type="checkbox" class="checkbox-clickable" id="infinite-piece-count-check" />
-                <span data-i18n="infinitePieceCounts">Unendliche Teileanzahl</span>
+              <!-- Style picker -->
+              <div class="bk-style-picker" id="bk-style-picker" hidden>
+                <div class="bk-style-picker-label" data-i18n="stylePickerLabel">Wähle einen Stil</div>
+                <div class="bk-style-picker-grid" id="bk-style-picker-grid"></div>
               </div>
-              <div id="forced-infinite-piece-count-warning" hidden>
-                <small><p data-i18n="infinitePieceCountsWarning"><b>Wichtig</b>: Unendliche Teileanzahlen wurden verwendet</p></small>
-              </div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th scope="col" data-i18n="color">Farbe</th>
-                    <th scope="col" data-i18n="numberAvailable">Anzahl verfügbar</th>
-                  </tr>
-                </thead>
-                <tbody id="custom-stud-table-body"></tbody>
-              </table>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="mosaic-action-btn primary" id="add-custom-stud-button" data-i18n="addStud">+ Noppe hinzufügen</button>
-                <button class="mosaic-action-btn warning" type="button" id="clear-custom-studs-button" data-i18n="clearAvailablePieces">Alle löschen</button>
-              </div>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
-                <a id="export-stud-map-button" download="selected-studs.json" href="">
-                  <button class="mosaic-action-btn info" type="button" data-i18n="exportSelectedStuds">Exportieren</button>
-                </a>
-                <div class="btn-group">
-                  <button class="btn dropdown-toggle btn-outline-dark btn-sm" type="button" id="mix-in-stud-map-button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-i18n="mixInStuds">Set hinzufügen</button>
-                  <div class="dropdown-menu" id="mix-in-stud-map-options" aria-labelledby="mix-in-stud-map-button"></div>
-                  <input type="file" id="import-stud-map-file-input" name="import-stud-map-file-input" hidden />
-                </div>
-              </div>
-            </div>
 
-            <!-- KI-Bildwerkzeuge: client-side image helpers so users can improve
-                 the photo (auto-optimize, background removal, recolor) without the
-                 paintbrush. Everything runs in-browser via js/bk-ai-tools.js — the
-                 photo never leaves the device (GDPR-friendly, 0 external hosts).
-                 The mini-chat is intent-scoped: it only understands image commands
-                 and politely refuses anything off-topic. -->
-            <div class="bk-ai-tools" id="bk-ai-tools" hidden>
-              <div class="bk-ai-head">
-                <strong data-i18n="aiTitle">✨ KI-Bildwerkzeuge</strong>
-                <span data-i18n="aiDesc">Lass dein Foto automatisch fürs Mosaik optimieren – ohne Pinsel. Alles passiert direkt in deinem Browser, dein Bild wird nicht hochgeladen.</span>
-              </div>
-              <div class="bk-ai-actions">
-                <button type="button" class="bk-ai-btn" id="bk-ai-optimize" data-i18n="aiOptimize">Automatisch optimieren</button>
-                <button type="button" class="bk-ai-btn" id="bk-ai-bg" data-i18n="aiRemoveBg">Hintergrund entfernen</button>
-                <button type="button" class="bk-ai-btn bk-ai-reset" id="bk-ai-reset" data-i18n="aiReset">Zurücksetzen</button>
-              </div>
-              <div class="bk-ai-swatches" id="bk-ai-swatches" hidden>
-                <span class="bk-ai-swatch-label" data-i18n="aiBgColor">Hintergrundfarbe:</span>
-                <div class="bk-ai-swatch-row" id="bk-ai-swatch-row"></div>
-              </div>
-              <div class="bk-ai-chat">
-                <div class="bk-ai-chat-log" id="bk-ai-chat-log" aria-live="polite"></div>
-                <form class="bk-ai-chat-form" id="bk-ai-chat-form" autocomplete="off">
-                  <input type="text" class="bk-ai-chat-input" id="bk-ai-chat-input" data-i18n-placeholder="aiChatPlaceholder" placeholder="z. B. „Hintergrund entfernen“ oder „mach den Hintergrund blau“" aria-label="Bildbefehl" />
-                  <button type="submit" class="bk-ai-chat-send" id="bk-ai-chat-send" data-i18n-title="aiChatSend" title="Senden" aria-label="Senden">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <!-- KI-Bildwerkzeuge: client-side image helpers so users can improve
+                   the photo (auto-optimize, background removal, recolor, object
+                   detection/removal) without the paintbrush. Runs in-browser via
+                   js/bk-ai-tools.js. The mini-chat is intent-scoped: it only
+                   understands image commands and refuses off-topic requests. -->
+              <div class="bk-ai-tools" id="bk-ai-tools" hidden>
+                <div class="bk-ai-head">
+                  <strong data-i18n="aiTitle">✨ KI-Bildwerkzeuge</strong>
+                  <span data-i18n="aiDesc">Lass dein Foto automatisch fürs Mosaik optimieren – ohne Pinsel. Alles passiert direkt in deinem Browser, dein Bild wird nicht hochgeladen.</span>
+                </div>
+                <div class="bk-ai-actions">
+                  <button type="button" class="bk-ai-btn bk-ai-btn-primary" id="bk-ai-optimize">
+                    <span class="bk-ai-btn-ico" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4"/><path d="M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>
+                    </span>
+                    <span class="bk-ai-btn-tx"><span data-i18n="aiOptimize">Automatisch optimieren</span><small data-i18n="aiOptimizeHint">Fürs Mosaik aufbereiten</small></span>
                   </button>
-                </form>
+                  <button type="button" class="bk-ai-btn bk-ai-btn-secondary" id="bk-ai-bg">
+                    <span class="bk-ai-btn-ico" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                    </span>
+                    <span class="bk-ai-btn-tx"><span data-i18n="aiRemoveBg">Hintergrund entfernen</span><small data-i18n="aiRemoveBgHint">Motiv freistellen</small></span>
+                  </button>
+                </div>
+                <button type="button" class="bk-ai-reset" id="bk-ai-reset">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  <span data-i18n="aiReset">Zurücksetzen</span>
+                </button>
+                <div class="bk-ai-swatches" id="bk-ai-swatches" hidden>
+                  <span class="bk-ai-swatch-label" data-i18n="aiBgColor">Hintergrundfarbe:</span>
+                  <div class="bk-ai-swatch-row" id="bk-ai-swatch-row"></div>
+                </div>
+                <!-- Chat is collapsed by default behind this toggle so the panel
+                     stays compact; users open it only when they want to type a
+                     free-form wish ("entferne den Laptop", "mach den Hund blau"). -->
+                <button type="button" class="bk-ai-chat-toggle" id="bk-ai-chat-toggle" aria-expanded="false" aria-controls="bk-ai-chat">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span data-i18n="aiChatToggle">Eigenen Wunsch eingeben</span>
+                </button>
+                <div class="bk-ai-chat" id="bk-ai-chat" hidden>
+                  <div class="bk-ai-chat-log" id="bk-ai-chat-log" aria-live="polite"></div>
+                  <form class="bk-ai-chat-form" id="bk-ai-chat-form" autocomplete="off">
+                    <input type="text" class="bk-ai-chat-input" id="bk-ai-chat-input" data-i18n-placeholder="aiChatPlaceholder" placeholder="z. B. „Hintergrund entfernen“ oder „mach den Hintergrund blau“" aria-label="Bildbefehl" />
+                    <button type="submit" class="bk-ai-chat-send" id="bk-ai-chat-send" data-i18n-title="aiChatSend" title="Senden" aria-label="Senden">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
 
-            <!-- Free design service: lets users hand off the photo to the
-                 BRICKONAS team if they're not happy with the auto-result.
-                 Routes to /kontakt/?ref=mosaik-designservice — the contact
-                 form's prefill recognises that ref and fills subject + message. -->
-            <div class="bk-designservice">
-              <div class="bk-ds-text">
-                <strong data-i18n="dsTitle">Designservice</strong>
-                <span data-i18n="dsDesc">Du bist nicht zufrieden mit dem Ergebnis? Schick uns dein Foto und wir erstellen dir kostenlos einen optimierten Mosaik-Vorschlag per E-Mail.</span>
+            <!-- ============ MANUAL MODE PANEL (hidden by default) ============ -->
+            <div class="bk-mode-panel" id="bk-mode-manual" role="tabpanel" aria-labelledby="bk-mode-tab-manual" hidden>
+              <p class="bk-mode-hint" data-i18n="modeManualHint">Bearbeite einzelne Pixel mit dem Pinsel, um dein Mosaik selbst zu perfektionieren.</p>
+
+              <!-- Paintbrush Tools -->
+              <div class="mosaic-tools-label" data-i18n="editPixels">Pixel bearbeiten</div>
+              <div class="mosaic-tools-bar">
+                <div class="btn-group">
+                  <button class="btn dropdown-toggle paintbrush-controls-button" type="button" id="paintbrush-tool-selection-dropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.067 6.067 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.118 8.118 0 0 1-3.078.132 3.659 3.659 0 0 1-.562-.135 1.382 1.382 0 0 1-.466-.247.714.714 0 0 1-.204-.288.622.622 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896.126.007.243.025.348.048.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04z"/></svg>
+                  </button>
+                  <div class="dropdown-menu" id="paintbrush-tool-selection-dropdown-options">
+                    <a class="dropdown-item btn" id="paintbrush-tool-dropdown-option"><span data-i18n="paintbrush">Pinsel</span></a>
+                    <a class="dropdown-item btn" id="eraser-tool-dropdown-option"><span data-i18n="eraser">Radierer</span></a>
+                    <a class="dropdown-item btn" id="dropdown-tool-dropdown-option"><span data-i18n="dropper">Pipette</span></a>
+                  </div>
+                </div>
+                <span id="paintbrush-controls"> </span>
+                <button class="btn paintbrush-controls-button" type="button" id="clear-overrides-button" data-toggle="tooltip" title="Alle Pinseländerungen löschen" data-placement="top">
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/></svg>
+                </button>
               </div>
-              <button type="button" class="bk-ds-btn" id="bk-designservice-btn" data-i18n="dsButton">Designservice anfragen</button>
+
+              <!-- Piece Stats (hidden) -->
+              <div id="custom-stud-map-controls" style="display:none;">
+                <div class="mosaic-piece-stats">
+                  <div class="mosaic-piece-stat">
+                    <div class="stat-value" id="required-studs">0</div>
+                    <div class="stat-label" data-i18n="requiredPieces">Erforderlich</div>
+                  </div>
+                  <div class="mosaic-piece-stat">
+                    <div class="stat-value" id="available-studs">0</div>
+                    <div class="stat-label" data-i18n="availablePieces">Verfügbar</div>
+                  </div>
+                  <div class="mosaic-piece-stat">
+                    <div class="stat-value" id="missing-studs">0</div>
+                    <div class="stat-label" data-i18n="missingPiecesLabel">Fehlend</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Available Colors (hidden, kept for JS) -->
+              <div style="display:none;">
+                <div class="mosaic-checkbox" id="infinite-piece-count-check-container">
+                  <input type="checkbox" class="checkbox-clickable" id="infinite-piece-count-check" />
+                  <span data-i18n="infinitePieceCounts">Unendliche Teileanzahl</span>
+                </div>
+                <div id="forced-infinite-piece-count-warning" hidden>
+                  <small><p data-i18n="infinitePieceCountsWarning"><b>Wichtig</b>: Unendliche Teileanzahlen wurden verwendet</p></small>
+                </div>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="color">Farbe</th>
+                      <th scope="col" data-i18n="numberAvailable">Anzahl verfügbar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="custom-stud-table-body"></tbody>
+                </table>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="mosaic-action-btn primary" id="add-custom-stud-button" data-i18n="addStud">+ Noppe hinzufügen</button>
+                  <button class="mosaic-action-btn warning" type="button" id="clear-custom-studs-button" data-i18n="clearAvailablePieces">Alle löschen</button>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                  <a id="export-stud-map-button" download="selected-studs.json" href="">
+                    <button class="mosaic-action-btn info" type="button" data-i18n="exportSelectedStuds">Exportieren</button>
+                  </a>
+                  <div class="btn-group">
+                    <button class="btn dropdown-toggle btn-outline-dark btn-sm" type="button" id="mix-in-stud-map-button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-i18n="mixInStuds">Set hinzufügen</button>
+                    <div class="dropdown-menu" id="mix-in-stud-map-options" aria-labelledby="mix-in-stud-map-button"></div>
+                    <input type="file" id="import-stud-map-file-input" name="import-stud-map-file-input" hidden />
+                  </div>
+                </div>
+              </div>
             </div>
+
+            <!-- Free design service: escape hatch, demoted into a collapsible
+                 disclosure so it no longer competes with the primary editing
+                 tools. Routes to /kontakt/?ref=mosaik-designservice — the contact
+                 form's prefill recognises that ref and fills subject + message. -->
+            <details class="bk-designservice-details">
+              <summary class="bk-ds-summary">
+                <span class="bk-ds-summary-icon" aria-hidden="true">✉️</span>
+                <span data-i18n="dsCollapseLabel">Lieber von Profis machen lassen? Designservice (kostenlos)</span>
+              </summary>
+              <div class="bk-designservice">
+                <div class="bk-ds-text">
+                  <strong data-i18n="dsTitle">Designservice</strong>
+                  <span data-i18n="dsDesc">Du bist nicht zufrieden mit dem Ergebnis? Schick uns dein Foto und wir erstellen dir kostenlos einen optimierten Mosaik-Vorschlag per E-Mail.</span>
+                </div>
+                <button type="button" class="bk-ds-btn" id="bk-designservice-btn" data-i18n="dsButton">Designservice anfragen</button>
+              </div>
+            </details>
 
             <div class="mosaic-nav-buttons">
               <button class="btn-back" type="button" id="back-to-step1-btn" data-i18n="backConfigure">&#x2190; Zurück: Anpassen</button>
@@ -1971,6 +2171,15 @@
                       <button type="button" id="admin-download-pdf-button" style="background:#2E7D32;color:#fff;border:0;border-radius:6px;padding:10px 16px;font-weight:600;cursor:pointer;width:100%;">
                         Anleitung als PDF herunterladen
                       </button>
+                    </div>
+
+                    <!-- Standalone download (revealed by index.js ONLY when the configurator
+                         is opened directly, i.e. window.self === window.top). Inside the
+                         WordPress shop the configurator runs in an iframe, so this panel
+                         stays hidden and the PDF remains behind the order. -->
+                    <div class="mosaic-standalone-download" id="mosaic-standalone-download" hidden style="margin-top:14px;padding:16px;border-radius:10px;background:#f1f8f2;text-align:center;">
+                      <div style="font-size:15px;color:#2A352B;font-weight:700;margin-bottom:10px;" data-i18n="standaloneDownloadTitle">Deine Bauanleitung ist fertig</div>
+                      <button type="button" id="standalone-download-pdf-button" style="background:#2E7D32;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-weight:600;cursor:pointer;width:100%;font-size:15px;" data-i18n="standaloneDownloadBtn">Anleitung als PDF herunterladen</button>
                     </div>
                   </div>
                 </div>
@@ -2132,27 +2341,25 @@
     <script src="js/vendor/jquery-3.2.1.slim.min.js?v=1"></script>
     <script src="js/vendor/popper-1.12.9.min.js?v=1"></script>
     <script src="js/vendor/bootstrap-4.6.0.min.js?v=1"></script>
-    <!-- jsPDF 2.5.2 (self-hosted). Upgraded from 1.5.3 because 1.5.3's flate
-         compressor corrupted dense vector streams ("Bad block header in flate
-         stream" → blank pages), which forced the plate-overview pages to be
-         rasterised. 2.5.2 compresses them correctly, so overviews are now crisp
-         vectors. The library exposes window.jspdf.jsPDF; the shim below restores
-         the global `jsPDF` name the rest of the code (new jsPDF({...})) expects. -->
-    <script src="js/jspdf-2.5.2.umd.min.js?v=1"></script>
-    <script>if (window.jspdf && window.jspdf.jsPDF) { window.jsPDF = window.jspdf.jsPDF; }</script>
+    <!-- jsPDF 2.5.2 (~357 KB) and PIXI (~397 KB) are NOT loaded here anymore.
+         They are only needed on the final/result step (PDF download + the 3D
+         depth preview), so index.js lazy-loads them on first use via
+         ensureJsPDF() / ensurePixi() (loadScriptOnce). This keeps ~755 KB of
+         download + parse off the initial configurator open. The jsPDF UMD build
+         exposes window.jspdf.jsPDF; ensureJsPDF() restores the global `jsPDF`
+         name the rest of the code (new jsPDF({...})) expects. -->
     <script src="js/vendor/d3.v5.min.js?v=1"></script>
     <script src="js/vendor/d3-color-difference-0.1.3.min.js?v=1"></script>
     <script src="js/vendor/cropper-2.0.0-alpha.2.min.js?v=1"></script>
-    <script src="js/pixi.min.js"></script>
     <script src="js/bricklink-colors.js?v=1"></script>
     <script src="js/stud-maps.js?v=1"></script>
     <script src="js/heap.js"></script>
-    <script src="js/i18n.js?v=30"></script>
+    <script src="js/i18n.js?v=35"></script>
     <script src="js/algo.js?v=28"></script>
     <script src="js/instructions-vector.js?v=1"></script>
-    <script src="js/index.js?v=62"></script>
+    <script src="js/index.js?v=66"></script>
     <script src="js/bk-ai-segment.js?v=2"></script>
-    <script src="js/bk-ai-tools.js?v=9"></script>
+    <script src="js/bk-ai-tools.js?v=11"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing

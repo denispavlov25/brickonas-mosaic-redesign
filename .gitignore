@@ -2,3 +2,6 @@ node_modules
 app/service-worker.js
 app/workbox-*.js
 .DS_Store
+
+# Local-only object-edit demo (not for Pages deploy)
+lab/

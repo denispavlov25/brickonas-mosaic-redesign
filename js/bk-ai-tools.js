@@ -574,6 +574,9 @@
     if (!window.bkSeg || !ensureBase()) { state.bgMaskTried = true; cb(false); return; }
     setBusy(true);
     setStatus(tr("aiSegLoading"));
+    // Defer one frame so the loading overlay paints before the (cached-model)
+    // segmentation inference blocks the main thread — see runObjectEdit note.
+    requestAnimationFrame(function () {
     window.bkSeg.segmentPerson(state.baseCanvas).then(function (r) {
       // Reject empty/degenerate masks (no subject, or the whole frame) — those
       // are worse than the flood-fill. A real cut-out covers a sane mid-range.
@@ -592,6 +595,7 @@
       clearStatus();
       setBusy(false);
       cb(false);
+    });
     });
   }
 
@@ -685,6 +689,34 @@
 
   // ---- UI plumbing ------------------------------------------------------
 
+  // Central processing overlay — reuses the engine's #loading-overlay card so an
+  // AI pass (esp. the multi-second object-detection on first chat use) reads as
+  // "working", not "frozen / hung". A chat message alone isn't enough feedback.
+  // Callers can set a context message via setBusyMsg() before flipping busy on.
+  var _busyTitle = null;
+  var _busySub = null;
+  function setBusyMsg(title, sub) { _busyTitle = title || null; _busySub = sub || null; }
+  function aiOverlay(show) {
+    var ov = document.getElementById("loading-overlay");
+    if (!ov) return;
+    if (show) {
+      var t = document.getElementById("loading-overlay-title");
+      var s = document.getElementById("loading-overlay-sub");
+      if (t) t.innerHTML = _busyTitle || tr("aiBusyTitle");
+      if (s) s.innerHTML = _busySub || tr("aiBusySub");
+      ov.classList.remove("hidden");
+      // bk-instant kills the fade so the spinner is on-screen before any
+      // synchronous compute can stutter the first frame.
+      ov.classList.add("bk-instant");
+      void ov.offsetWidth;
+      ov.classList.add("show-spinner");
+    } else {
+      ov.classList.add("hidden");
+      ov.classList.remove("show-spinner");
+      ov.classList.remove("bk-instant");
+    }
+  }
+
   function setBusy(busy) {
     state.busy = busy;
     [els.optimize, els.bg, els.reset, els.send, els.input].forEach(function (el) {
@@ -697,6 +729,8 @@
       var sw = els.swatchRow.querySelectorAll(".bk-ai-swatch");
       for (var i = 0; i < sw.length; i++) sw[i].disabled = busy;
     }
+    aiOverlay(busy);
+    if (!busy) { _busyTitle = null; _busySub = null; }
   }
 
   function syncButtons() {
@@ -1003,10 +1037,17 @@
   function runObjectEdit(objMatch, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
     var label = objMatch.key;
+    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
     setBusy(true);
     setStatus(tr("aiChatObjectModelLoading"));
     addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
 
+    // Defer the heavy model load + inference one frame so the loading overlay
+    // actually paints first. When the model is already cached, loadTransformers()
+    // resolves synchronously and the inference would otherwise run as a microtask
+    // before any render — the user sees a freeze with no spinner (esp. on the
+    // not-found path, which finishes without ever yielding to a paint).
+    requestAnimationFrame(function () {
     var base = workBase();
     var W = base.width, H = base.height;
     var image;
@@ -1059,6 +1100,7 @@
         setBusy(false);
         addMsg(tr("aiChatObjectUnavailable"), "bot");
       });
+    });
   }
 
   // ---- mini-chat (intent-scoped, image-only) ---------------------------

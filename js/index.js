@@ -22,6 +22,43 @@ function debounce(func, wait) {
 // Debounce delay in milliseconds
 const DEBOUNCE_DELAY = 150;
 
+// --- Lazy script loader -----------------------------------------------------
+// jsPDF (~357 KB) and PIXI (~397 KB) are only needed on the final/result step
+// (PDF download + the 3D depth preview). Loading them eagerly cost ~755 KB of
+// download + parse on every configurator open, before the user has even picked
+// an image. We inject them on first use instead. Each URL is fetched at most
+// once; concurrent callers share the same in-flight promise.
+const _loadedScripts = {};
+function loadScriptOnce(src) {
+    if (_loadedScripts[src]) return _loadedScripts[src];
+    _loadedScripts[src] = new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.onload = function () { resolve(); };
+        s.onerror = function () {
+            delete _loadedScripts[src]; // allow a retry on a later attempt
+            reject(new Error("Failed to load " + src));
+        };
+        document.head.appendChild(s);
+    });
+    return _loadedScripts[src];
+}
+
+// Ensure window.jsPDF is available (the UMD build exposes window.jspdf.jsPDF).
+function ensureJsPDF() {
+    if (window.jsPDF) return Promise.resolve();
+    return loadScriptOnce("js/jspdf-2.5.2.umd.min.js?v=1").then(function () {
+        if (window.jspdf && window.jspdf.jsPDF) { window.jsPDF = window.jspdf.jsPDF; }
+    });
+}
+
+// Ensure the PIXI global is available (used only by the 3D depth preview).
+function ensurePixi() {
+    if (window.PIXI) return Promise.resolve();
+    return loadScriptOnce("js/pixi.min.js?v=1");
+}
+
 const LOW_DPI = 48;
 const HIGH_DPI = 96;
 
@@ -2429,9 +2466,10 @@ function create3dPreview() {
     setTimeout(depthPreviewResize, 5);
 }
 
-document.getElementById("step-4-depth-tab").addEventListener("click", () => {
+document.getElementById("step-4-depth-tab").addEventListener("click", async () => {
     const targetWidth = step4CanvasUpscaled.clientWidth;
     step4Canvas3dUpscaled.clientWidth = targetWidth;
+    await ensurePixi(); // PIXI is lazy-loaded — only the 3D depth preview needs it
     setTimeout(create3dPreview, 20);
 });
 
@@ -2835,6 +2873,7 @@ async function getMosaicUploaderConfig() {
 
 // Generate PDF as Blob (same logic as download flow but returns blob instead of saving).
 async function generateInstructionsAsBlob() {
+    await ensureJsPDF();
     const instructionsCanvasContainer = document.getElementById("instructions-canvas-container");
     instructionsCanvasContainer.innerHTML = "";
     updatePlateDimensions();
@@ -3074,6 +3113,7 @@ async function uploadMosaicPdfToServer(blob, statusEl) {
 }
 
 async function generateInstructions() {
+    await ensureJsPDF();
     const instructionsCanvasContainer = document.getElementById("instructions-canvas-container");
     instructionsCanvasContainer.innerHTML = "";
     disableInteraction();
@@ -3399,6 +3439,7 @@ function getUsedPlateMatrices(depthPixelArray) {
 }
 
 async function generateDepthInstructions() {
+    await ensureJsPDF();
     const instructionsCanvasContainer = document.getElementById("depth-instructions-canvas-container");
     instructionsCanvasContainer.innerHTML = "";
     disableInteraction();
@@ -3557,6 +3598,37 @@ document.getElementById("download-instructions-button").addEventListener("click"
 
     } catch (e) {
         console.warn("Admin download init failed:", e);
+    }
+})();
+
+// Standalone PDF download: when the configurator is opened directly (top-level,
+// not embedded in the WordPress shop iframe), offer the build-instructions PDF as
+// a free direct download on the result step. Inside WordPress the configurator
+// runs in an iframe (window.self !== window.top) and the PDF stays behind the
+// order, so this panel never shows there.
+(function initStandaloneDownload() {
+    try {
+        if (window.self !== window.top) return; // embedded → keep PDF gated
+        var panel = document.getElementById("mosaic-standalone-download");
+        var btn = document.getElementById("standalone-download-pdf-button");
+        if (!panel || !btn) return;
+        panel.hidden = false;
+        btn.addEventListener("click", async function () {
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = (typeof t === "function") ? t("standaloneDownloadBusy") : "Anleitung wird erstellt …";
+            try {
+                await generateInstructions();
+            } catch (err) {
+                console.error("Standalone PDF download failed:", err);
+                alert("PDF-Erstellung fehlgeschlagen. Bitte erneut versuchen.");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
+        });
+    } catch (e) {
+        console.warn("Standalone download init failed:", e);
     }
 })();
 
@@ -3956,6 +4028,50 @@ if (createMosaicBtn) {
         });
     });
 }
+
+// Step 2 mode switch: "Automatisch" (KI helpers) vs "Selbst bearbeiten"
+// (paintbrush). Progressive disclosure — only one panel visible at a time so
+// the screen stays focused on a single task. Defaults to auto.
+(function wireStep2ModeSwitch() {
+    var tabs = document.querySelectorAll('.bk-mode-tab');
+    if (!tabs.length) return;
+    var panels = {
+        auto: document.getElementById('bk-mode-auto'),
+        manual: document.getElementById('bk-mode-manual')
+    };
+    function activate(mode) {
+        for (var i = 0; i < tabs.length; i++) {
+            var isOn = tabs[i].getAttribute('data-mode') === mode;
+            tabs[i].classList.toggle('is-active', isOn);
+            tabs[i].setAttribute('aria-selected', isOn ? 'true' : 'false');
+        }
+        if (panels.auto) panels.auto.hidden = (mode !== 'auto');
+        if (panels.manual) panels.manual.hidden = (mode !== 'manual');
+    }
+    for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener('click', function() {
+            activate(this.getAttribute('data-mode'));
+        });
+    }
+    activate('auto');
+})();
+
+// Step 2 KI-chat: collapsed behind a toggle so the auto panel stays compact.
+// Opens on demand for free-form wishes; focuses the input when revealed.
+(function wireAiChatToggle() {
+    var btn = document.getElementById('bk-ai-chat-toggle');
+    var chat = document.getElementById('bk-ai-chat');
+    if (!btn || !chat) return;
+    btn.addEventListener('click', function() {
+        var willOpen = chat.hidden;
+        chat.hidden = !willOpen;
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+            var input = document.getElementById('bk-ai-chat-input');
+            if (input) input.focus();
+        }
+    });
+})();
 
 // Step 2 → Result: "Weiter: Ergebnis" — runs internal step 4, shows result
 var goToResultBtn = document.getElementById('go-to-result-btn');
