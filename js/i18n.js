@@ -22,6 +22,8 @@ const translations = {
         editPixels: "Pixel bearbeiten",
         aiOptimizeHint: "Fürs Mosaik aufbereiten",
         aiRemoveBgHint: "Motiv freistellen",
+        aiRegion: "Bereich auswählen",
+        aiRegionHint: "Stelle antippen & ändern",
         aiBusyTitle: "KI verarbeitet dein Bild …",
         aiBusySub: "Einen Moment bitte.",
         aiBusyThink: "KI sucht „{obj}“ im Bild …",
@@ -255,7 +257,7 @@ const translations = {
         aiBusy: "Wird angewendet …",
         aiChatPlaceholder: "Beschreibe, was ich mit dem Bild machen soll …",
         aiChatSend: "Senden",
-        aiChatGreeting: "Hi! Ich helfe dir bei deinem Bild. Du kannst mir z. B. sagen, dass ich den Hintergrund entfernen oder einfärben, ein Objekt entfernen, eine Farbe gegen eine andere tauschen, das Bild optimieren oder in Schwarz-Weiß umwandeln soll.",
+        aiChatGreeting: "Hi! Ich helfe dir bei deinem Bild. Du kannst mir z. B. sagen, dass ich den Hintergrund entfernen oder einfärben, ein Objekt entfernen, eine Farbe gegen eine andere tauschen, das Bild optimieren oder in Schwarz-Weiß umwandeln soll. Auch feine Details gehen: bei Porträts z. B. „Augen blau machen“ oder „Lippen rot“, und mit „Bereich auswählen“ tippst du eine Stelle im Bild an (z. B. die Nase eines Hundes) und änderst genau die.",
         aiChatOffTopic: "Ich bin nur für die Bildbearbeitung da 🙂 Ich kann z. B. den Hintergrund entfernen oder einfärben, einzelne Farben austauschen (z. B. „aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Was möchtest du mit dem Bild machen?",
         aiChatDoneOptimize: "Erledigt – ich habe Kontrast und Farben fürs Mosaik kräftiger gemacht.",
         aiChatDoneBg: "Erledigt – der Hintergrund ist entfernt. Du kannst auch eine Hintergrundfarbe wählen.",
@@ -280,6 +282,17 @@ const translations = {
         aiChatObjectNeedColor: "Welche Farbe soll „{obj}“ bekommen? Sag z. B. „färbe den {obj} blau“.",
         aiChatObjectAsk: "Soll ich „{obj}“ entfernen oder umfärben? Sag z. B. „entferne den {obj}“ oder „färbe den {obj} blau“.",
         aiChatObjectUnavailable: "Die KI-Objekterkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
+
+        // Tap-to-segment ("Bereich auswählen") overlay
+        regionTitle: "Bereich auswählen",
+        regionHint: "Tippe auf die Stelle im Bild, die du ändern möchtest – die KI erkennt sie automatisch.",
+        regionPickColor: "Neue Farbe wählen:",
+        regionRemove: "Entfernen",
+        regionRedo: "Andere Stelle",
+        regionDetecting: "Ich erkenne den Bereich …",
+        regionNothing: "An dieser Stelle konnte ich nichts klar erkennen. Tippe etwas genauer auf das Motiv.",
+        regionUnavailable: "Die Bereichserkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
+        regionThis: "der Bereich",
 
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",

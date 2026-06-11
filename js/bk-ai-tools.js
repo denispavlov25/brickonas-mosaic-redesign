@@ -826,7 +826,11 @@
     // open-vocabulary (not in COCO-80) → OWL-ViT
     { keys: ["gesicht"], coco: null, q: "face" },
     { keys: ["haare", "haar"], coco: null, q: "hair" },
-    { keys: ["augen", "auge"], coco: null, q: "eye" },
+    // face = a precise FaceLandmarker mask is tried first (human portraits),
+    // with the q/OWL-ViT path as the fallback for non-face photos. "augenbrauen"
+    // must precede "augen" so the longer word wins the findObject tie-break.
+    { keys: ["augenbrauen", "augenbraue"], coco: null, q: "eyebrow", face: "eyebrows" },
+    { keys: ["augen", "auge"], coco: null, q: "eye", face: "eyes" },
     { keys: ["hemd", "t-shirt", "shirt"], coco: null, q: "shirt" },
     { keys: ["jacke"], coco: null, q: "jacket" },
     { keys: ["pullover", "pulli"], coco: null, q: "sweater" },
@@ -1031,6 +1035,38 @@
     ctx.putImageData(img, 0, 0);
   }
 
+  // Nearest-neighbour resample a {mask,w,h} to W×H (the working-canvas grid).
+  function resampleMask(seg, W, H) {
+    if (seg.w === W && seg.h === H) return seg.mask;
+    var mask = new Uint8Array(W * H);
+    for (var y = 0; y < H; y++) {
+      var sy = Math.min(seg.h - 1, (y / H * seg.h) | 0);
+      for (var x = 0; x < W; x++) {
+        var sx = Math.min(seg.w - 1, (x / W * seg.w) | 0);
+        mask[y * W + x] = seg.mask[sy * seg.w + sx];
+      }
+    }
+    return mask;
+  }
+
+  // Bake a ready mask (any resolution) as a remove/recolor edit into a fresh
+  // object layer, then recompute() (which re-applies the other active ops and
+  // re-renders, owning the busy lock until it finishes). Shared by ALL three
+  // mask sources — the COCO/OWL detector, FaceLandmarker and tap-to-segment —
+  // so "how an edit is applied" lives in exactly one place.
+  function bakeRegionEdit(seg, action, colorObj, dilatePx, onDone) {
+    var base = workBase();
+    var W = base.width, H = base.height;
+    var mask = resampleMask(seg, W, H);
+    if (dilatePx) mask = dilateMask(mask, W, H, dilatePx);
+    var layer = cloneCanvas(base);
+    var lctx = layer.getContext("2d");
+    if (action === "remove") inpaintMask(lctx, W, H, mask);
+    else recolorMask(lctx, W, H, mask, colorObj.hex);
+    state.objectLayer = layer;
+    recompute(onDone);
+  }
+
   // Orchestrator: detect → segment → bake the edit into state.objectLayer, then
   // recompute() (which re-applies any other active ops and re-renders the mosaic).
   // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
@@ -1049,7 +1085,6 @@
     // not-found path, which finishes without ever yielding to a paint).
     requestAnimationFrame(function () {
     var base = workBase();
-    var W = base.width, H = base.height;
     var image;
     loadTransformers()
       .then(function () {
@@ -1068,26 +1103,10 @@
           addMsg(tr("aiChatObjectNotFound").replace("{obj}", label), "bot");
           return;
         }
-        // Resample the model mask to the working-canvas grid, then dilate 2px.
-        var mask = new Uint8Array(W * H);
-        for (var y = 0; y < H; y++) {
-          var sy = Math.min(seg.h - 1, (y / H * seg.h) | 0);
-          for (var x = 0; x < W; x++) {
-            var sx = Math.min(seg.w - 1, (x / W * seg.w) | 0);
-            mask[y * W + x] = seg.mask[sy * seg.w + sx];
-          }
-        }
-        mask = dilateMask(mask, W, H, 2);
-        // Bake into a fresh object layer cloned from the current workBase.
-        var layer = cloneCanvas(base);
-        var lctx = layer.getContext("2d");
-        if (action === "remove") inpaintMask(lctx, W, H, mask);
-        else recolorMask(lctx, W, H, mask, colorObj.hex);
-        state.objectLayer = layer;
+        // Resample → dilate 2px → bake → re-render, all in bakeRegionEdit
+        // (which owns the busy lock from here and clears it on finish).
         clearStatus();
-        // recompute() re-applies optimize/grayscale/recolor/bg on top and
-        // re-renders; it owns the busy lock from here (clears it on finish).
-        recompute(function () {
+        bakeRegionEdit(seg, action, colorObj, 2, function () {
           if (action === "remove") {
             addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
           } else {
@@ -1100,6 +1119,179 @@
         setBusy(false);
         addMsg(tr("aiChatObjectUnavailable"), "bot");
       });
+    });
+  }
+
+  // Find the OBJ_SYN entry for a face part, so a no-face fallback can hand off
+  // to the generic OWL-ViT detector (e.g. "eye"/"nose" on an animal).
+  function fallbackMatch(part, label) {
+    for (var i = 0; i < OBJ_SYN.length; i++) {
+      if (OBJ_SYN[i].face === part) return { entry: OBJ_SYN[i], key: label };
+    }
+    return { entry: { coco: null, q: part }, key: label };
+  }
+
+  // Face-part edit (eyes / nose / lips / eyebrows): builds a PRECISE mask from
+  // MediaPipe FaceLandmarker — the on-device model the coarse OWL-ViT detector
+  // couldn't match on small facial parts. If no human face is present (e.g. an
+  // animal photo), it transparently falls back to the generic detector so the
+  // request still does its best instead of silently failing.
+  function runFacePartEdit(part, label, action, colorObj) {
+    if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
+    if (!window.bkRegion) { runObjectEdit(fallbackMatch(part, label), action, colorObj); return; }
+    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
+    setBusy(true);
+    setStatus(tr("aiChatObjectModelLoading"));
+    addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
+    // Defer a frame so the loading overlay paints before the (possibly cached)
+    // model inference blocks the main thread — same reasoning as runObjectEdit.
+    requestAnimationFrame(function () {
+      var base = workBase();
+      window.bkRegion.facePartMask(base, part).then(function (seg) {
+        if (seg && seg.coverage > 0.0005) {
+          clearStatus();
+          bakeRegionEdit(seg, action, colorObj, 2, function () {
+            if (action === "remove") addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
+            else addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
+          });
+        } else {
+          // No human face found → let the generic detector try (animals etc.).
+          clearStatus();
+          setBusy(false);
+          runObjectEdit(fallbackMatch(part, label), action, colorObj);
+        }
+      }).catch(function () {
+        clearStatus();
+        setBusy(false);
+        runObjectEdit(fallbackMatch(part, label), action, colorObj);
+      });
+    });
+  }
+
+  // ---- tap-to-segment ("Bereich auswählen") ----------------------------
+  // Lets the user TAP a spot on the source photo; MediaPipe InteractiveSegmenter
+  // ("magic touch") returns a pixel mask of whatever object sits there, which we
+  // then recolor or remove. Robust on ANY photo (a dog's nose, a flower, a patch
+  // of sky) — it sidesteps the unreliable text→detect localisation entirely.
+  var region = { seg: null, busy: false };
+
+  function regionStatus(text) {
+    if (!els.regionStatus) return;
+    els.regionStatus.textContent = text || "";
+    els.regionStatus.hidden = !text;
+  }
+
+  function openRegion() {
+    if (state.busy) return;
+    if (!ensureBase()) return;
+    if (!els.regionOverlay) return;
+    var base = workBase();
+    var maxW = Math.min(base.width, 520);
+    var scale = maxW / base.width;
+    var dispW = Math.round(base.width * scale), dispH = Math.round(base.height * scale);
+    els.regionCanvas.width = base.width; els.regionCanvas.height = base.height;
+    els.regionCanvas.getContext("2d").drawImage(base, 0, 0);
+    els.regionCanvas.style.width = dispW + "px"; els.regionCanvas.style.height = dispH + "px";
+    els.regionHi.width = base.width; els.regionHi.height = base.height;
+    els.regionHi.getContext("2d").clearRect(0, 0, base.width, base.height);
+    els.regionHi.style.width = dispW + "px"; els.regionHi.style.height = dispH + "px";
+    region.seg = null;
+    if (els.regionActions) els.regionActions.hidden = true;
+    if (els.regionMarker) els.regionMarker.hidden = true;
+    regionStatus("");
+    els.regionOverlay.hidden = false;
+    document.body.classList.add("bk-region-open");
+    // Warm up the model so the first tap responds quickly.
+    if (window.bkRegion) window.bkRegion.preload("touch");
+  }
+
+  function closeRegion() {
+    if (els.regionOverlay) els.regionOverlay.hidden = true;
+    document.body.classList.remove("bk-region-open");
+    region.seg = null;
+    if (els.regionHi) els.regionHi.getContext("2d").clearRect(0, 0, els.regionHi.width, els.regionHi.height);
+  }
+
+  // Paint a translucent green highlight of the segmented region on the overlay
+  // canvas (which sits at source resolution above the photo).
+  function drawRegionHighlight(seg) {
+    var hi = els.regionHi; if (!hi) return;
+    var W = hi.width, H = hi.height;
+    var mask = resampleMask(seg, W, H);
+    var ctx = hi.getContext("2d");
+    var img = ctx.createImageData(W, H), d = img.data;
+    for (var i = 0; i < mask.length; i++) {
+      if (mask[i]) { var q = i * 4; d[q] = 46; d[q + 1] = 125; d[q + 2] = 50; d[q + 3] = 120; }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function regionTap(ev) {
+    if (region.busy) return;
+    var cv = els.regionCanvas;
+    var rect = cv.getBoundingClientRect();
+    var pt = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+    var cx = pt.clientX - rect.left, cy = pt.clientY - rect.top;
+    if (cx < 0 || cy < 0 || cx > rect.width || cy > rect.height) return;
+    var nx = clamp01(cx / rect.width), ny = clamp01(cy / rect.height);
+    if (els.regionMarker) {
+      els.regionMarker.style.left = cx + "px";
+      els.regionMarker.style.top = cy + "px";
+      els.regionMarker.hidden = false;
+    }
+    if (!window.bkRegion) { regionStatus(tr("regionUnavailable")); return; }
+    region.busy = true;
+    regionStatus(tr("regionDetecting"));
+    if (els.regionActions) els.regionActions.hidden = true;
+    var base = workBase();
+    requestAnimationFrame(function () {
+      window.bkRegion.segmentAtPoint(base, nx, ny).then(function (seg) {
+        region.busy = false;
+        if (!seg || seg.coverage < 0.0008) { regionStatus(tr("regionNothing")); return; }
+        region.seg = seg;
+        drawRegionHighlight(seg);
+        regionStatus("");
+        if (els.regionActions) els.regionActions.hidden = false;
+      }).catch(function () {
+        region.busy = false;
+        regionStatus(tr("regionUnavailable"));
+      });
+    });
+  }
+
+  // Bake the selected region as a recolor (colorObj) or remove (null), then
+  // close the overlay; bakeRegionEdit owns the busy lock + re-render.
+  function applyRegionEdit(action, colorObj) {
+    if (!region.seg) return;
+    var seg = region.seg;
+    var label = tr("regionThis");
+    closeRegion();
+    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
+    setBusy(true);
+    requestAnimationFrame(function () {
+      bakeRegionEdit(seg, action, colorObj, 2, function () {
+        if (action === "remove") addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
+        else addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
+      });
+    });
+  }
+
+  // Build the colour swatches inside the region overlay (mirror of the bg row).
+  function buildRegionSwatches() {
+    if (!els.regionSwatches) return;
+    els.regionSwatches.innerHTML = "";
+    COLORS.forEach(function (col) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "bk-ai-swatch";
+      b.style.background = col.hex;
+      b.title = col.name;
+      b.setAttribute("aria-label", col.name);
+      b.addEventListener("click", function () {
+        if (region.busy) return;
+        applyRegionEdit("recolor", col);
+      });
+      els.regionSwatches.appendChild(b);
     });
   }
 
@@ -1208,12 +1400,15 @@
         if (!need()) return;
         var objColor = objColors.length ? objColors[objColors.length - 1].col : detectColor(text);
         if (!objColor) { addMsg(tr("aiChatObjectNeedColor").replace("{obj}", objMatch.key), "bot"); return; }
-        runObjectEdit(objMatch, "recolor", objColor);
+        // Face parts (eyes/nose/lips/eyebrows) → precise FaceLandmarker mask.
+        if (objMatch.entry.face) runFacePartEdit(objMatch.entry.face, objMatch.key, "recolor", objColor);
+        else runObjectEdit(objMatch, "recolor", objColor);
         return;
       }
       if (removeWord) {
         if (!need()) return;
-        runObjectEdit(objMatch, "remove", null);
+        if (objMatch.entry.face) runFacePartEdit(objMatch.entry.face, objMatch.key, "remove", null);
+        else runObjectEdit(objMatch, "remove", null);
         return;
       }
       // Object named but no clear action → ask what to do with it.
@@ -1354,7 +1549,22 @@
     els.input = document.getElementById("bk-ai-chat-input");
     els.send = document.getElementById("bk-ai-chat-send");
 
+    // Tap-to-segment ("Bereich auswählen") overlay nodes.
+    els.regionBtn = document.getElementById("bk-ai-region");
+    els.regionOverlay = document.getElementById("bk-region-overlay");
+    els.regionCanvas = document.getElementById("bk-region-canvas");
+    els.regionHi = document.getElementById("bk-region-hi");
+    els.regionMarker = document.getElementById("bk-region-marker");
+    els.regionStage = document.getElementById("bk-region-stage");
+    els.regionActions = document.getElementById("bk-region-actions");
+    els.regionSwatches = document.getElementById("bk-region-swatches");
+    els.regionStatus = document.getElementById("bk-region-status");
+    els.regionRemove = document.getElementById("bk-region-remove");
+    els.regionRedo = document.getElementById("bk-region-redo");
+    els.regionClose = document.getElementById("bk-region-close");
+
     buildSwatches();
+    buildRegionSwatches();
 
     if (els.optimize) els.optimize.addEventListener("click", function () {
       if (state.busy) return;
@@ -1386,6 +1596,38 @@
       var v = els.input ? els.input.value : "";
       if (els.input) els.input.value = "";
       handleChat(v);
+    });
+
+    // Tap-to-segment overlay wiring.
+    if (els.regionBtn) els.regionBtn.addEventListener("click", function () {
+      if (state.busy) return;
+      if (!ensureBase()) return;
+      openRegion();
+    });
+    if (els.regionClose) els.regionClose.addEventListener("click", closeRegion);
+    if (els.regionStage) {
+      els.regionStage.addEventListener("click", regionTap);
+      // Tap support without firing a duplicate synthetic click.
+      els.regionStage.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        regionTap(e);
+      }, { passive: false });
+    }
+    if (els.regionRemove) els.regionRemove.addEventListener("click", function () {
+      if (region.busy) return;
+      applyRegionEdit("remove", null);
+    });
+    if (els.regionRedo) els.regionRedo.addEventListener("click", function () {
+      if (region.busy) return;
+      region.seg = null;
+      if (els.regionActions) els.regionActions.hidden = true;
+      if (els.regionMarker) els.regionMarker.hidden = true;
+      if (els.regionHi) els.regionHi.getContext("2d").clearRect(0, 0, els.regionHi.width, els.regionHi.height);
+      regionStatus("");
+    });
+    // Close on backdrop click (but not when clicking inside the modal).
+    if (els.regionOverlay) els.regionOverlay.addEventListener("click", function (e) {
+      if (e.target === els.regionOverlay) closeRegion();
     });
 
     // Reveal the panel + seed the chat greeting when the user reaches step 2
