@@ -775,6 +775,9 @@
         color: var(--bk-green-primary, #2e7d32);
       }
       .bk-region-actions { margin-top: 16px; }
+      .bk-region-tolrow { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+      .bk-region-tol-label { font-size: 0.85rem; font-weight: 600; color: var(--bk-dark-gray, #5a655c); white-space: nowrap; }
+      .bk-region-tol { flex: 1 1 auto; accent-color: var(--bk-green-primary, #2e7d32); cursor: pointer; }
       .bk-region-swatch-label { font-size: 0.85rem; font-weight: 600; color: var(--bk-dark-gray, #5a655c); margin-bottom: 8px; }
       .bk-region-actions .bk-ai-swatch-row { margin-bottom: 14px; }
       .bk-region-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -2041,9 +2044,9 @@
                     </span>
                     <span class="bk-ai-btn-tx"><span data-i18n="aiRemoveBg">Hintergrund entfernen</span><small data-i18n="aiRemoveBgHint">Motiv freistellen</small></span>
                   </button>
-                  <!-- Tap-to-segment: pick any area on the photo (a nose, a
-                       flower, a patch of sky) and recolor or remove it. Runs the
-                       on-device MediaPipe InteractiveSegmenter via js/bk-ai-region.js. -->
+                  <!-- Tap-to-select: pick any detail on the photo (a nose, a
+                       flower, a patch of sky) and recolor or remove it. Runs an
+                       on-device colour flood-fill (magic wand) via js/bk-ai-region.js. -->
                   <button type="button" class="bk-ai-btn bk-ai-btn-secondary" id="bk-ai-region">
                     <span class="bk-ai-btn-ico" aria-hidden="true">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M3 15v4a2 2 0 0 0 2 2h4"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2077,9 +2080,10 @@
                 </div>
               </div>
 
-              <!-- Tap-to-segment overlay: shows the source photo so the user can
-                   tap the exact spot to edit. MediaPipe InteractiveSegmenter
-                   ("magic touch") segments it on-device; then recolor / remove. -->
+              <!-- Tap-to-select overlay: shows the source photo so the user can
+                   tap the exact spot to edit. A colour flood-fill (magic wand)
+                   isolates that detail on-device; a sensitivity slider grows /
+                   shrinks it; then recolor / remove. -->
               <div class="bk-region-overlay" id="bk-region-overlay" hidden>
                 <div class="bk-region-modal" role="dialog" aria-modal="true" aria-labelledby="bk-region-title">
                   <div class="bk-region-head">
@@ -2096,6 +2100,10 @@
                   </div>
                   <div class="bk-region-status" id="bk-region-status" hidden></div>
                   <div class="bk-region-actions" id="bk-region-actions" hidden>
+                    <div class="bk-region-tolrow">
+                      <label class="bk-region-tol-label" for="bk-region-tol" data-i18n="regionTol">Auswahl-Empfindlichkeit:</label>
+                      <input type="range" class="bk-region-tol" id="bk-region-tol" min="10" max="90" value="36" step="2">
+                    </div>
                     <div class="bk-region-swatch-label" data-i18n="regionPickColor">Neue Farbe wählen:</div>
                     <div class="bk-ai-swatch-row" id="bk-region-swatches"></div>
                     <div class="bk-region-buttons">
@@ -2459,13 +2467,13 @@
     <script src="js/bricklink-colors.js?v=1"></script>
     <script src="js/stud-maps.js?v=1"></script>
     <script src="js/heap.js"></script>
-    <script src="js/i18n.js?v=37"></script>
+    <script src="js/i18n.js?v=38"></script>
     <script src="js/algo.js?v=28"></script>
     <script src="js/instructions-vector.js?v=1"></script>
     <script src="js/index.js?v=66"></script>
     <script src="js/bk-ai-segment.js?v=2"></script>
-    <script src="js/bk-ai-region.js?v=1"></script>
-    <script src="js/bk-ai-tools.js?v=12"></script>
+    <script src="js/bk-ai-region.js?v=3"></script>
+    <script src="js/bk-ai-tools.js?v=13"></script>
 
     <script>
       // Notify parent iframe of height changes for dynamic resizing

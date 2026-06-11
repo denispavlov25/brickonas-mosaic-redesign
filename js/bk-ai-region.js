@@ -4,22 +4,25 @@
  * Two complementary, fully in-browser features that the coarse OWL-ViT
  * object detector can't do well:
  *
- *   1. segmentAtPoint(canvas, nx, ny)  — "magic touch": the user taps a
- *      spot and MediaPipe InteractiveSegmenter returns a pixel mask of
- *      whatever object sits under that point (a dog's nose, a single
- *      flower, a patch of sky …). Works on ANY photo, not just faces.
+ *   1. floodSelect(canvas, nx, ny, tol)  — "magic wand": the user taps a
+ *      spot and we flood-fill the CONTIGUOUS patch of similarly coloured
+ *      pixels around it (a dog's black nose, one flower petal, a patch of
+ *      sky …). Unlike a whole-object segmenter, this isolates a small
+ *      detail — tapping a nose selects the nose, not the whole dog — and
+ *      a tolerance slider lets the user grow/shrink the selection. Pure
+ *      pixel math: instant, deterministic, no model download.
  *
  *   2. facePartMask(canvas, part)      — precise eyes / nose / lips /
  *      eyebrows mask from MediaPipe FaceLandmarker's 468 landmarks, for
  *      the most common mosaic subject: human portraits.
  *
- * Both reuse the SAME self-hosted MediaPipe vision bundle + wasm already
- * shipped for the selfie segmenter (js/vendor/mediapipe/), so there are
- * zero external hosts and the photo never leaves the browser. The only
- * new bytes are the two model files under assets/ml/, each lazy-loaded
- * the first time its feature is used (nothing downloads otherwise).
+ * facePartMask reuses the SAME self-hosted MediaPipe vision bundle + wasm
+ * already shipped for the selfie segmenter (js/vendor/mediapipe/), so
+ * there are zero external hosts and the photo never leaves the browser.
+ * The only new bytes are the face model under assets/ml/, lazy-loaded the
+ * first time a face-part edit runs (nothing downloads otherwise).
  *
- * Public API: window.bkRegion.{ segmentAtPoint, facePartMask, preload }.
+ * Public API: window.bkRegion.{ floodSelect, facePartMask, preload }.
  */
 (function () {
   "use strict";
@@ -31,7 +34,6 @@
   function asset(rel) { return new URL(rel, SELF).href; }
   var BUNDLE = asset("vendor/mediapipe/vision_bundle.mjs");
   var WASM_DIR = asset("vendor/mediapipe/wasm");
-  var TOUCH_MODEL = asset("../assets/ml/magic_touch.tflite");
   var FACE_MODEL = asset("../assets/ml/face_landmarker.task");
 
   var bundlePromise = null; // the vision bundle ESM, loaded at most once
@@ -41,41 +43,63 @@
     return bundlePromise;
   }
 
-  // ---- InteractiveSegmenter (tap-to-segment) ---------------------------
-  var touchPromise = null;
-  function loadTouch() {
-    if (touchPromise) return touchPromise;
-    touchPromise = loadBundle().then(function (mod) {
-      return mod.FilesetResolver.forVisionTasks(WASM_DIR).then(function (fileset) {
-        function create(delegate) {
-          return mod.InteractiveSegmenter.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: TOUCH_MODEL, delegate: delegate },
-            outputCategoryMask: false,
-            outputConfidenceMasks: true
-          });
-        }
-        return create("GPU").catch(function () { return create("CPU"); });
-      });
-    });
-    touchPromise.catch(function () { touchPromise = null; });
-    return touchPromise;
-  }
+  // ---- magic-wand flood fill (tap-to-select a detail) ------------------
+  // Select the contiguous run of pixels around (nx, ny in 0..1) whose colour
+  // is within `tol` (euclidean RGB distance) of the tapped colour. Returns
+  // { mask: Uint8Array(w*h; 1 = selected), w, h, coverage }. Runs on a copy
+  // downscaled to <=maxDim px (the mosaic re-quantises the result anyway), so
+  // even a large photo selects in a few ms with no jank.
+  function floodSelect(canvas, nx, ny, tol) {
+    var maxDim = 480;
+    var sw = canvas.width, sh = canvas.height;
+    var scale = Math.min(1, maxDim / Math.max(sw, sh));
+    var w = Math.max(1, Math.round(sw * scale));
+    var h = Math.max(1, Math.round(sh * scale));
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var ctx = cv.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, w, h);
+    var d = ctx.getImageData(0, 0, w, h).data;
 
-  // Segment the object under the normalized point (nx, ny in 0..1).
-  // Resolves { mask: Uint8Array(w*h; 1 = selected), w, h, coverage }.
-  function segmentAtPoint(canvas, nx, ny) {
-    return loadTouch().then(function (seg) {
-      var res = seg.segment(canvas, { keypoint: { x: nx, y: ny } });
-      var cm = res.confidenceMasks && res.confidenceMasks[0];
-      if (!cm) { if (res.close) res.close(); throw new Error("no confidence mask"); }
-      var w = cm.width, h = cm.height;
-      var f = cm.getAsFloat32Array();
-      var mask = new Uint8Array(w * h), fg = 0;
-      for (var i = 0; i < f.length; i++) { var v = f[i] >= 0.5 ? 1 : 0; mask[i] = v; fg += v; }
-      if (cm.close) cm.close();
-      if (res.close) res.close();
-      return { mask: mask, w: w, h: h, coverage: f.length ? fg / f.length : 0 };
-    });
+    var sx = Math.min(w - 1, Math.max(0, Math.round(nx * w)));
+    var sy = Math.min(h - 1, Math.max(0, Math.round(ny * h)));
+
+    // Seed = average of a 3×3 neighbourhood so a single noisy pixel doesn't
+    // throw the colour match off.
+    var sr = 0, sg = 0, sb = 0, sc = 0, dx, dy, xx, yy, p;
+    for (dy = -1; dy <= 1; dy++) {
+      for (dx = -1; dx <= 1; dx++) {
+        xx = sx + dx; yy = sy + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        p = (yy * w + xx) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; sc++;
+      }
+    }
+    sr /= sc; sg /= sc; sb /= sc;
+
+    var tol2 = tol * tol;
+    var mask = new Uint8Array(w * h);
+    var seed = sy * w + sx;
+    var stack = [seed];
+    mask[seed] = 1;
+    var fg = 0;
+    while (stack.length) {
+      var idx = stack.pop();
+      fg++;
+      var x = idx % w, y = (idx / w) | 0;
+      var nb;
+      // 4-connectivity keeps the selection tight (no diagonal colour bleed).
+      for (var n = 0; n < 4; n++) {
+        if (n === 0) { if (x === 0) continue; nb = idx - 1; }
+        else if (n === 1) { if (x === w - 1) continue; nb = idx + 1; }
+        else if (n === 2) { if (y === 0) continue; nb = idx - w; }
+        else { if (y === h - 1) continue; nb = idx + w; }
+        if (mask[nb]) continue;
+        var q = nb * 4;
+        var er = d[q] - sr, eg = d[q + 1] - sg, eb = d[q + 2] - sb;
+        if (er * er + eg * eg + eb * eb <= tol2) { mask[nb] = 1; stack.push(nb); }
+      }
+    }
+    return { mask: mask, w: w, h: h, coverage: fg / (w * h) };
   }
 
   // ---- FaceLandmarker (face-part masks) --------------------------------
@@ -102,8 +126,8 @@
 
   // Canonical MediaPipe FaceMesh landmark indices per region. We fill the
   // CONVEX HULL of each point set — for eyes/eyebrows/nose that is the
-  // region itself; for lips it spans both lips (exactly what a recolor
-  // wants). Combined "augen"/"augenbrauen" use both sides.
+  // region itself; for lips we fill the outer-lip ring (both lips). Combined
+  // "augen"/"augenbrauen" use both sides.
   var FACE_PARTS = {
     rightEye: [33, 7, 163, 144, 145, 153, 154, 155, 133, 246, 161, 160, 159, 158, 157, 173],
     leftEye: [263, 249, 390, 373, 374, 380, 381, 382, 362, 466, 388, 387, 386, 385, 384, 398],
@@ -172,6 +196,44 @@
     return { mask: mask, w: w, h: h, coverage: mask.length ? fg / mask.length : 0 };
   }
 
+  // Colour-gated grow ("smart dilation"). Extends `mask` outward, but only into
+  // neighbouring pixels whose colour is within `tol` (euclidean RGB) of the
+  // AVERAGE colour already inside the mask. This catches make-up overdrawn past
+  // the anatomical landmarks — e.g. lipstick painted beyond the lip line — while
+  // stopping dead at the skin, which is a different colour. Without it a "lips
+  // blue" edit only recolours the convex-hull centre and leaves a red rim.
+  // Bounded to `iterations` one-pixel rings so it can't run away into the face.
+  function growMaskByColor(data, w, h, mask, tol, iterations) {
+    var sr = 0, sg = 0, sb = 0, n = 0, i, q;
+    for (i = 0; i < mask.length; i++) {
+      if (!mask[i]) continue;
+      q = i * 4; sr += data[q]; sg += data[q + 1]; sb += data[q + 2]; n++;
+    }
+    if (!n) return mask;
+    sr /= n; sg /= n; sb /= n;
+    var tol2 = tol * tol;
+    var cur = mask;
+    for (var it = 0; it < iterations; it++) {
+      var next = cur.slice();
+      var changed = false;
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var idx = y * w + x;
+          if (cur[idx]) continue;
+          var hasN = (x > 0 && cur[idx - 1]) || (x < w - 1 && cur[idx + 1]) ||
+                     (y > 0 && cur[idx - w]) || (y < h - 1 && cur[idx + w]);
+          if (!hasN) continue;
+          q = idx * 4;
+          var er = data[q] - sr, eg = data[q + 1] - sg, eb = data[q + 2] - sb;
+          if (er * er + eg * eg + eb * eb <= tol2) { next[idx] = 1; changed = true; }
+        }
+      }
+      cur = next;
+      if (!changed) break;
+    }
+    return cur;
+  }
+
   // Precise mask for a named face part on a HUMAN face. Resolves the mask
   // object, or null when no face is found (caller falls back / explains).
   // `part` is one of: "eyes", "nose", "lips", "eyebrows".
@@ -182,7 +244,28 @@
       var res = fl.detect(canvas);
       var faces = res && res.faceLandmarks;
       if (!faces || !faces.length) return null;
-      return buildPartMask(faces[0], groups, canvas.width, canvas.height);
+      // Build the mask at a capped resolution. FaceLandmarker coords are
+      // normalised (0..1), so the hull is resolution-independent — we can
+      // rasterise small for a fast colour-grow and let the caller upsample.
+      var maxDim = 512;
+      var scale = Math.min(1, maxDim / Math.max(canvas.width, canvas.height));
+      var w = Math.max(1, Math.round(canvas.width * scale));
+      var h = Math.max(1, Math.round(canvas.height * scale));
+      var seg = buildPartMask(faces[0], groups, w, h);
+      if (!seg) return null;
+      // Grab a matching downscaled colour buffer and grow the mask into
+      // same-coloured neighbours (catches overdrawn make-up; stops at skin).
+      var cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      var ctx = cv.getContext("2d");
+      ctx.drawImage(canvas, 0, 0, w, h);
+      var data = ctx.getImageData(0, 0, w, h).data;
+      var iterations = Math.max(4, Math.round(Math.max(w, h) * 0.03));
+      seg.mask = growMaskByColor(data, w, h, seg.mask, 52, iterations);
+      var fg = 0;
+      for (var i = 0; i < seg.mask.length; i++) fg += seg.mask[i];
+      seg.coverage = seg.mask.length ? fg / seg.mask.length : 0;
+      return seg;
     });
   }
 
@@ -190,13 +273,12 @@
   function preload(which) {
     try {
       if (which === "face") return loadFace();
-      if (which === "touch") return loadTouch();
     } catch (e) {}
     return Promise.resolve();
   }
 
   window.bkRegion = {
-    segmentAtPoint: segmentAtPoint,
+    floodSelect: floodSelect,
     facePartMask: facePartMask,
     preload: preload
   };

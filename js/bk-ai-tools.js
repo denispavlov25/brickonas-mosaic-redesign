@@ -1019,17 +1019,29 @@
     ctx.putImageData(img, 0, 0);
   }
 
-  // Recolor: masked HSV repaint — force the target hue, keep each pixel's own
-  // brightness (V) so shading/texture survive, floor saturation so the new
-  // colour reads cleanly. Reuses the file's hexToRgb/rgbToHsv/hsvToRgb.
+  // Recolor: masked HSV repaint — force the target hue and keep each pixel's
+  // own brightness (V) so shading/texture survive. Crucially we CLAMP V into a
+  // mid band: the mosaic re-quantises to a fixed BrickLink palette, so a very
+  // dark (shadowed) or blown-out pixel would otherwise snap to black/white and
+  // the recolour looks patchy — e.g. only the lit half of a pair of lips turns
+  // blue. Clamping keeps the whole region reading as the chosen colour while
+  // still preserving some light/shade. Neutral targets (white/black/grey) are
+  // painted flat with no hue tint. Reuses hexToRgb/rgbToHsv/hsvToRgb.
   function recolorMask(ctx, w, h, mask, hex) {
     var to = hexToRgb(hex), thsv = rgbToHsv(to.r, to.g, to.b);
+    var neutral = thsv[1] < 0.12; // white / black / grey → no chroma
     var img = ctx.getImageData(0, 0, w, h), d = img.data;
     for (var i = 0; i < mask.length; i++) {
       if (!mask[i]) continue;
-      var q = i * 4;
-      var hsv = rgbToHsv(d[q], d[q + 1], d[q + 2]);
-      var rgb = hsvToRgb(thsv[0], Math.min(1, Math.max(hsv[1], 0.45)), hsv[2]);
+      var q = i * 4, rgb;
+      if (neutral) {
+        rgb = hsvToRgb(0, 0, thsv[2]); // flat grey/white/black, reads cleanly
+      } else {
+        var hsv = rgbToHsv(d[q], d[q + 1], d[q + 2]);
+        var v = Math.min(0.95, Math.max(0.42, hsv[2]));
+        var s = Math.min(1, Math.max(hsv[1], 0.6));
+        rgb = hsvToRgb(thsv[0], s, v);
+      }
       d[q] = rgb[0]; d[q + 1] = rgb[1]; d[q + 2] = rgb[2];
     }
     ctx.putImageData(img, 0, 0);
@@ -1168,12 +1180,20 @@
     });
   }
 
-  // ---- tap-to-segment ("Bereich auswählen") ----------------------------
-  // Lets the user TAP a spot on the source photo; MediaPipe InteractiveSegmenter
-  // ("magic touch") returns a pixel mask of whatever object sits there, which we
-  // then recolor or remove. Robust on ANY photo (a dog's nose, a flower, a patch
-  // of sky) — it sidesteps the unreliable text→detect localisation entirely.
-  var region = { seg: null, busy: false };
+  // ---- tap-to-select ("Bereich auswählen") -----------------------------
+  // Lets the user TAP a spot on the source photo; we flood-fill the contiguous
+  // patch of similarly-coloured pixels around it (magic wand) and recolor or
+  // remove just that. Unlike a whole-object segmenter this isolates a small
+  // DETAIL — tapping a dog's nose selects the nose, not the whole dog — and a
+  // sensitivity slider grows/shrinks the patch live. Pure pixel math, instant,
+  // no model download. lastNx/lastNy remember the tap so the slider can re-run.
+  var region = { seg: null, busy: false, lastNx: null, lastNy: null };
+
+  // Current magic-wand tolerance from the slider (euclidean RGB distance).
+  function regionTolerance() {
+    var v = els.regionTol ? parseInt(els.regionTol.value, 10) : 36;
+    return isNaN(v) ? 36 : v;
+  }
 
   function regionStatus(text) {
     if (!els.regionStatus) return;
@@ -1196,13 +1216,14 @@
     els.regionHi.getContext("2d").clearRect(0, 0, base.width, base.height);
     els.regionHi.style.width = dispW + "px"; els.regionHi.style.height = dispH + "px";
     region.seg = null;
+    region.lastNx = null;
+    region.lastNy = null;
+    if (els.regionTol) els.regionTol.value = 36; // reset sensitivity each open
     if (els.regionActions) els.regionActions.hidden = true;
     if (els.regionMarker) els.regionMarker.hidden = true;
     regionStatus("");
     els.regionOverlay.hidden = false;
     document.body.classList.add("bk-region-open");
-    // Warm up the model so the first tap responds quickly.
-    if (window.bkRegion) window.bkRegion.preload("touch");
   }
 
   function closeRegion() {
@@ -1233,29 +1254,44 @@
     var pt = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
     var cx = pt.clientX - rect.left, cy = pt.clientY - rect.top;
     if (cx < 0 || cy < 0 || cx > rect.width || cy > rect.height) return;
-    var nx = clamp01(cx / rect.width), ny = clamp01(cy / rect.height);
+    region.lastNx = clamp01(cx / rect.width);
+    region.lastNy = clamp01(cy / rect.height);
     if (els.regionMarker) {
       els.regionMarker.style.left = cx + "px";
       els.regionMarker.style.top = cy + "px";
       els.regionMarker.hidden = false;
     }
-    if (!window.bkRegion) { regionStatus(tr("regionUnavailable")); return; }
+    runRegionSelect();
+  }
+
+  // Flood-fill the patch around the last tap at the current tolerance and show
+  // the highlight + actions. Re-callable from the sensitivity slider, so the
+  // user can dial the selection in without re-tapping.
+  function runRegionSelect() {
+    if (region.lastNx == null) return;
+    if (!window.bkRegion || !window.bkRegion.floodSelect) { regionStatus(tr("regionUnavailable")); return; }
     region.busy = true;
     regionStatus(tr("regionDetecting"));
-    if (els.regionActions) els.regionActions.hidden = true;
     var base = workBase();
+    var nx = region.lastNx, ny = region.lastNy, tol = regionTolerance();
     requestAnimationFrame(function () {
-      window.bkRegion.segmentAtPoint(base, nx, ny).then(function (seg) {
+      try {
+        var seg = window.bkRegion.floodSelect(base, nx, ny, tol);
         region.busy = false;
-        if (!seg || seg.coverage < 0.0008) { regionStatus(tr("regionNothing")); return; }
+        if (!seg || seg.coverage < 0.00005) {
+          region.seg = null;
+          if (els.regionActions) els.regionActions.hidden = true;
+          regionStatus(tr("regionNothing"));
+          return;
+        }
         region.seg = seg;
         drawRegionHighlight(seg);
         regionStatus("");
         if (els.regionActions) els.regionActions.hidden = false;
-      }).catch(function () {
+      } catch (e) {
         region.busy = false;
         regionStatus(tr("regionUnavailable"));
-      });
+      }
     });
   }
 
@@ -1562,6 +1598,7 @@
     els.regionRemove = document.getElementById("bk-region-remove");
     els.regionRedo = document.getElementById("bk-region-redo");
     els.regionClose = document.getElementById("bk-region-close");
+    els.regionTol = document.getElementById("bk-region-tol");
 
     buildSwatches();
     buildRegionSwatches();
@@ -1620,11 +1657,23 @@
     if (els.regionRedo) els.regionRedo.addEventListener("click", function () {
       if (region.busy) return;
       region.seg = null;
+      region.lastNx = null;
+      region.lastNy = null;
       if (els.regionActions) els.regionActions.hidden = true;
       if (els.regionMarker) els.regionMarker.hidden = true;
       if (els.regionHi) els.regionHi.getContext("2d").clearRect(0, 0, els.regionHi.width, els.regionHi.height);
       regionStatus("");
     });
+    // Sensitivity slider re-runs the magic wand on the last tap (debounced so a
+    // drag doesn't fire a flood fill per pixel).
+    if (els.regionTol) {
+      var tolTimer = null;
+      els.regionTol.addEventListener("input", function () {
+        if (region.lastNx == null) return;
+        if (tolTimer) clearTimeout(tolTimer);
+        tolTimer = setTimeout(runRegionSelect, 70);
+      });
+    }
     // Close on backdrop click (but not when clicking inside the modal).
     if (els.regionOverlay) els.regionOverlay.addEventListener("click", function (e) {
       if (e.target === els.regionOverlay) closeRegion();

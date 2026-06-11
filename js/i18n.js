@@ -285,12 +285,13 @@ const translations = {
 
         // Tap-to-segment ("Bereich auswählen") overlay
         regionTitle: "Bereich auswählen",
-        regionHint: "Tippe auf die Stelle im Bild, die du ändern möchtest – die KI erkennt sie automatisch.",
+        regionHint: "Tippe auf die Stelle im Bild, die du ändern möchtest – z. B. die Nase eines Hundes. Mit dem Regler legst du fest, wie groß der Bereich wird.",
         regionPickColor: "Neue Farbe wählen:",
+        regionTol: "Empfindlichkeit:",
         regionRemove: "Entfernen",
         regionRedo: "Andere Stelle",
-        regionDetecting: "Ich erkenne den Bereich …",
-        regionNothing: "An dieser Stelle konnte ich nichts klar erkennen. Tippe etwas genauer auf das Motiv.",
+        regionDetecting: "Ich wähle den Bereich …",
+        regionNothing: "An dieser Stelle konnte ich nichts klar abgrenzen. Tippe etwas genauer auf das Motiv.",
         regionUnavailable: "Die Bereichserkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
         regionThis: "der Bereich",
 
