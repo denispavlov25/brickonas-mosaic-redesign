@@ -184,39 +184,74 @@
     var n = d.length;
     var i;
 
-    // 1) White balance — Shades of Gray (p-norm, p=6).
-    var p6R = 0, p6G = 0, p6B = 0, cnt = 0;
+    // 1) White balance — Shades of Gray (p-norm, p=6), but COLOR-CAST AWARE.
+    //    Gray-world / Shades-of-Gray assume the scene averages to gray. A photo of
+    //    a deliberately single-hued subject (e.g. an orange tiger) violates that:
+    //    the blue channel is tiny, so its gain explodes (~2.3x) and the whole image
+    //    turns blue. We measure how strongly the image is tinted (castStrength) and
+    //    damp BOTH the white balance and the per-channel auto-color by that amount,
+    //    plus hard-clamp every channel gain so no single channel can blow out.
+    var p6R = 0, p6G = 0, p6B = 0, sumR = 0, sumG = 0, sumB = 0, cnt = 0;
     for (i = 0; i < n; i += 4) {
       var rr = d[i], gg = d[i + 1], bb = d[i + 2];
       p6R += rr * rr * rr * rr * rr * rr;
       p6G += gg * gg * gg * gg * gg * gg;
       p6B += bb * bb * bb * bb * bb * bb;
+      sumR += rr; sumG += gg; sumB += bb;
       cnt++;
     }
+    var mR = sumR / cnt, mG = sumG / cnt, mB = sumB / cnt;
+    var mGray = (mR + mG + mB) / 3 || 1;
+    // castStrength = how far the most-dominant channel sits from neutral gray.
+    // ~0 for a neutral photo, large (>0.35) for a strongly single-hued subject.
+    var maxDev = Math.max(Math.abs(mR - mGray), Math.abs(mG - mGray), Math.abs(mB - mGray)) / mGray;
+    // neutralFactor: 1 = apply full neutralization (neutral photo); floors at 0.12
+    // for a strongly tinted subject so we barely touch its real colour.
+    var neutralFactor = 1 - maxDev / 0.35;
+    if (neutralFactor < 0.12) neutralFactor = 0.12; else if (neutralFactor > 1) neutralFactor = 1;
+
     var illR = Math.pow(p6R / cnt, 1 / 6);
     var illG = Math.pow(p6G / cnt, 1 / 6);
     var illB = Math.pow(p6B / cnt, 1 / 6);
     var illGray = (illR + illG + illB) / 3;
     var sR = illR > 1 ? illGray / illR : 1, sG = illG > 1 ? illGray / illG : 1, sB = illB > 1 ? illGray / illB : 1;
-    // Damp the correction so it never over-tints.
-    sR = 1 + (sR - 1) * 0.7; sG = 1 + (sG - 1) * 0.7; sB = 1 + (sB - 1) * 0.7;
+    // Damp by a fixed 0.7 AND by cast-awareness, then hard-clamp to a tight range
+    // so a low channel (blue on an orange image) can never be more than mildly scaled.
+    var wbDamp = 0.7 * neutralFactor;
+    sR = 1 + (sR - 1) * wbDamp; sG = 1 + (sG - 1) * wbDamp; sB = 1 + (sB - 1) * wbDamp;
+    function clampGain(s) { return s < 0.85 ? 0.85 : (s > 1.18 ? 1.18 : s); }
+    sR = clampGain(sR); sG = clampGain(sG); sB = clampGain(sB);
 
-    // 2) Per-channel histograms after WB to find clip points.
+    // 2) Per-channel histograms after WB to find clip points, plus a shared
+    //    luminance histogram. Independently stretching each channel is "auto
+    //    colour" and removes a cast — great for a neutral photo, disastrous for
+    //    an orange subject (it pumps the sparse blue channel up to full range).
+    //    So we blend each channel's clip points toward the SHARED luminance clip
+    //    points by neutralFactor: tinted image -> shared stretch (pure contrast,
+    //    no colour shift); neutral image -> per-channel auto-colour as before.
     var hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+    var histL = new Uint32Array(256);
     for (i = 0; i < n; i += 4) {
       var r0 = clamp255(d[i] * sR) | 0;
       var g0 = clamp255(d[i + 1] * sG) | 0;
       var b0 = clamp255(d[i + 2] * sB) | 0;
       d[i] = r0; d[i + 1] = g0; d[i + 2] = b0; // keep WB result in place
       hist[0][r0]++; hist[1][g0]++; hist[2][b0]++;
+      histL[(0.299 * r0 + 0.587 * g0 + 0.114 * b0) | 0]++;
     }
     var clipCount = cnt * 0.001; // tight 0.1% clip (Photoshop Auto Tone default)
     function findLow(hch) { var acc = 0; for (var v = 0; v < 256; v++) { acc += hch[v]; if (acc > clipCount) return v; } return 0; }
     function findHigh(hch) { var acc = 0; for (var v = 255; v >= 0; v--) { acc += hch[v]; if (acc > clipCount) return v; } return 255; }
-    var lo = [findLow(hist[0]), findLow(hist[1]), findLow(hist[2])];
-    var hi = [findHigh(hist[0]), findHigh(hist[1]), findHigh(hist[2])];
-    var span = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-    for (var s = 0; s < 3; s++) if (span[s] < 8) span[s] = 8; // avoid blowups on flat channels
+    var loC = [findLow(hist[0]), findLow(hist[1]), findLow(hist[2])];
+    var hiC = [findHigh(hist[0]), findHigh(hist[1]), findHigh(hist[2])];
+    var loL = findLow(histL), hiL = findHigh(histL);
+    var lo = [], hi = [], span = [];
+    for (var s = 0; s < 3; s++) {
+      lo[s] = loC[s] * neutralFactor + loL * (1 - neutralFactor);
+      hi[s] = hiC[s] * neutralFactor + hiL * (1 - neutralFactor);
+      span[s] = hi[s] - lo[s];
+      if (span[s] < 8) span[s] = 8; // avoid blowups on flat channels
+    }
 
     // Stretched midtone (0..1) per channel, from the histogram, for gamma snap.
     function stretchedMean(hch, loc, sp) {
@@ -241,6 +276,7 @@
     for (var ch = 0; ch < 3; ch++) {
       var gch = (mean[ch] > 0.01 && mean[ch] < 0.99 && target > 0.01)
         ? Math.log(target) / Math.log(mean[ch]) : 1;
+      gch = 1 + (gch - 1) * neutralFactor; // cast-aware: don't snap a real colour to gray
       if (gch < 0.7) gch = 0.7; else if (gch > 1.4) gch = 1.4; // keep the snap gentle
       for (var x = 0; x < 256; x++) {
         var st01 = ((x - lo[ch]) * 255) / span[ch] / 255;          // auto-levels
