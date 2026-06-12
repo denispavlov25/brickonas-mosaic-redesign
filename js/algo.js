@@ -1359,13 +1359,25 @@ function generateInstructionTitlePage(
     if (logoLoaded) {
         ctx.drawImage(BRICKONAS_LOGO, logoX, logoY, logoTargetWidth, logoTargetHeight);
     } else {
+        // Fallback wordmark used when the logo image fails to load (e.g. the
+        // asset 403s on the server). Fit "BRICKONAS" to the banner so it can
+        // never overflow: start from the height-based size, then shrink until
+        // the measured text fits within ~86% of the banner width.
         ctx.fillStyle = "#1B5E20";
         ctx.fillRect(logoX, logoY, logoTargetWidth, logoTargetHeight);
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `bold ${logoTargetHeight * 0.45}px Arial`;
-        ctx.fillText("BRICKONAS", logoX + logoTargetWidth / 2, logoY + logoTargetHeight / 2);
+        const fallbackText = "BRICKONAS";
+        const maxTextWidth = logoTargetWidth * 0.86;
+        let fallbackFontSize = logoTargetHeight * 0.45;
+        ctx.font = `bold ${fallbackFontSize}px Arial`;
+        let measuredWidth = ctx.measureText(fallbackText).width;
+        if (measuredWidth > maxTextWidth) {
+            fallbackFontSize = fallbackFontSize * (maxTextWidth / measuredWidth);
+            ctx.font = `bold ${fallbackFontSize}px Arial`;
+        }
+        ctx.fillText(fallbackText, logoX + logoTargetWidth / 2, logoY + logoTargetHeight / 2);
         ctx.textAlign = "start";
         ctx.textBaseline = "alphabetic";
     }
