@@ -1555,7 +1555,7 @@
     }
 
     // 5) Optimize / enhance.
-    if (/(optimier|verbesser|sch(ä|ae)rfer|\bscharf|kontrast|klarer|qualit(ä|ae)t|besser mach|aufpolier|versch(ö|oe)ner|enhance|verbessere)/.test(text)) {
+    if (/(optimi(er|sier)|verbesser|sch(ä|ae)rfer|\bscharf|kontrast|klarer|qualit(ä|ae)t|besser mach|aufpolier|versch(ö|oe)ner|enhance|verbessere)/.test(text)) {
       if (!need()) return;
       state.optimized = true;
       recompute();
