@@ -72,10 +72,19 @@
     }
   }
 
-  // Memory-constrained devices get a smaller vision frame; desktop gets the full
-  // 512px. (On mobile the heavy object pipeline is skipped entirely anyway — see
-  // runObjectEdit — so this mainly bounds the MediaPipe / matte paths.)
-  var DETECT_MAX = isMobileDevice() ? 384 : 512;
+  // Memory-constrained devices get a smaller vision frame; desktop gets 512px.
+  var DETECT_MAX = isMobileDevice() ? 320 : 512;
+
+  // Phones with plenty of RAM. Chrome reports navigator.deviceMemory in GB,
+  // quantized and capped at 8; iOS Safari + Firefox report nothing (→ 0). Only
+  // these devices run the heavy object pipeline on mobile — and even then in
+  // low-memory mode (sequential load + dispose, see runObjectEdit). Everywhere
+  // else on mobile (incl. all iPhones, since they report no value), object-by-
+  // name editing shows a friendly note instead of risking a tab-killing OOM.
+  function isCapableMobile() {
+    var mem = (typeof navigator !== "undefined" && navigator.deviceMemory) || 0;
+    return mem >= 6;
+  }
 
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
@@ -992,6 +1001,22 @@
     }).then(function (pair) { _samModel = pair[0]; _samProc = pair[1]; return true; });
   }
 
+  // Free a model's ONNX session so its arena in the shared WASM heap can be
+  // REUSED by the next model instead of growing the heap further (WASM linear
+  // memory never shrinks, so the heap high-water-mark is what the OS sees). On
+  // mobile we dispose the detector before SlimSAM loads, and dispose SlimSAM
+  // after the mask is extracted, so two heavy models never co-reside — that gap
+  // is the difference between fitting under iOS's per-tab ceiling and an OOM.
+  function disposeDetectors() {
+    try { if (_cocoDet && _cocoDet.dispose) _cocoDet.dispose(); } catch (e) {}
+    try { if (_owlDet && _owlDet.dispose) _owlDet.dispose(); } catch (e) {}
+    _cocoDet = null; _owlDet = null;
+  }
+  function disposeSam() {
+    try { if (_samModel && _samModel.dispose) _samModel.dispose(); } catch (e) {}
+    _samModel = null; _samProc = null;
+  }
+
   // Canvas → transformers RawImage (RGBA, full canvas resolution).
   function canvasToRawImage(canvas) {
     var ctx = canvas.getContext("2d");
@@ -1190,11 +1215,16 @@
   function runObjectEdit(objMatch, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
     // The text-driven object detector (OWL-ViT / DETR) + SlimSAM run as heavy
-    // WASM models. On phones / low-memory devices loading them OOM-kills the tab
-    // ("Diese Seite konnte nicht geladen werden"), so we never run that pipeline
-    // there. Every other edit (canvas ops + the light MediaPipe person/face
-    // models) stays available — object-by-name editing is desktop-only.
-    if (isMobileDevice()) {
+    // WASM models. On phones, loading them can blow past the browser's per-tab
+    // memory ceiling and the OS kills the page ("Diese Seite konnte nicht geladen
+    // werden") — an OOM that is NOT catchable in JS. So we only run the pipeline
+    // on mobile when the device reports plenty of RAM (isCapableMobile); on every
+    // other phone (incl. all iPhones, which report no memory value) we show a
+    // friendly note instead. Desktop always runs it. lowMem mode (any mobile we
+    // do run on) disposes each model before loading the next so two heavy models
+    // never co-reside — see disposeDetectors/disposeSam.
+    var lowMem = isMobileDevice();
+    if (lowMem && !isCapableMobile()) {
       setBusy(false);
       clearStatus();
       addMsg(tr("aiChatObjectMobile"), "bot");
@@ -1223,10 +1253,15 @@
         return detectObject(image, objMatch.entry);
       })
       .then(function (box) {
+        // Free the detector before SlimSAM loads so the two never co-reside in
+        // the WASM heap (mobile only; desktop keeps them cached for speed).
+        if (lowMem) disposeDetectors();
         if (!box) { return null; }
         return segmentBox(image, box);
       })
       .then(function (seg) {
+        // Mask is already extracted into a plain array → SlimSAM can go now.
+        if (lowMem) disposeSam();
         if (!seg) {
           // not found → bail cleanly, no edit
           clearStatus();
@@ -1246,6 +1281,9 @@
         });
       })
       .catch(function () {
+        // Free both models on any failure too, so a thrown/rejected pipeline
+        // doesn't leave a heavy model resident and OOM the next attempt.
+        if (lowMem) { disposeDetectors(); disposeSam(); }
         clearStatus();
         setBusy(false);
         addMsg(tr("aiChatObjectUnavailable"), "bot");
