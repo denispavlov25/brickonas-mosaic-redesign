@@ -1209,85 +1209,185 @@
     recompute(onDone);
   }
 
-  // Orchestrator: detect → segment → bake the edit into state.objectLayer, then
+  // ── Server-side object segmentation (replaces the on-device OWL-ViT+SlimSAM) ──
+  // The old pipeline ran two heavy transformers.js WASM models in the browser.
+  // On mobile Safari that OOM-killed the whole tab ("Diese Seite konnte nicht
+  // geladen werden") — a per-tab memory ceiling, stricter inside an iframe, that
+  // even an 8 GB iPhone hit, and a crash NOT catchable in JS. So detect+segment
+  // now runs SERVER-SIDE via the Gemini proxy: we upload a downscaled JPEG + the
+  // object name, the proxy returns box_2d + a base64 PNG mask, and we apply that
+  // mask locally exactly as before (recolor/inpaint). No heavy model on ANY
+  // device → no crash, identical on iPhone / Android / desktop, and the ~50–100 MB
+  // of transformers.js + ONNX weights are never downloaded (loadTransformers and
+  // friends above are now dead code, kept only to keep this diff small).
+  var SEG_ENDPOINT   = (window.BK_AI_SEG_ENDPOINT || "/wp-json/bk-ai/v1/segment");
+  var SEG_UPLOAD_MAX = 768;    // longest side of the JPEG we send to the proxy
+  var SEG_TIMEOUT_MS = 60000;  // headroom over the proxy's own ~55 s Gemini wait
+
+  // Shrink `canvas` so its longest side ≤ maxDim, return { url:jpegDataURL, w, h }.
+  // A small upload keeps the round-trip fast; Gemini tiles the image internally
+  // so more pixels wouldn't sharpen the mask (which we resample onto a coarse
+  // stud grid anyway).
+  function canvasToUploadJpeg(canvas, maxDim) {
+    var w = canvas.width, h = canvas.height, m = Math.max(w, h), c = canvas;
+    if (m > maxDim) {
+      var s = maxDim / m;
+      c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(w * s));
+      c.height = Math.max(1, Math.round(h * s));
+      var cx = c.getContext("2d");
+      cx.imageSmoothingEnabled = true;
+      cx.drawImage(canvas, 0, 0, c.width, c.height);
+    }
+    return { url: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height };
+  }
+
+  // Decode the proxy's base64 PNG mask (sized to box_2d) into a full-frame binary
+  // mask { mask:Uint8Array(0/1), w, h } at the uploaded frame's resolution. `box`
+  // is [y0,x0,y1,x1] normalized 0–1000. Gemini's mask is a probability map →
+  // threshold at 127. Returns a Promise.
+  function decodeServerMask(maskB64, box, frameW, frameH) {
+    return new Promise(function (resolve, reject) {
+      // Never trust a network payload: the proxy already validates box_2d as four
+      // ints and the mask as a real PNG, but a malformed value must fail cleanly
+      // here (→ "unavailable") rather than throw deep inside the draw loop.
+      if (!box || box.length !== 4 ||
+          !isFinite(box[0]) || !isFinite(box[1]) || !isFinite(box[2]) || !isFinite(box[3])) {
+        reject(new Error("mask_decode")); return;
+      }
+      if (typeof maskB64 !== "string" || maskB64.length < 8) {
+        reject(new Error("mask_decode")); return;
+      }
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var clamp = function (v, hi) { return Math.max(0, Math.min(hi, Math.round(v))); };
+          var y0 = clamp(box[0] / 1000 * frameH, frameH);
+          var x0 = clamp(box[1] / 1000 * frameW, frameW);
+          var y1 = clamp(box[2] / 1000 * frameH, frameH);
+          var x1 = clamp(box[3] / 1000 * frameW, frameW);
+          var bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+          // Draw the PNG mask scaled to the box so it aligns 1:1 with that region.
+          var mc = document.createElement("canvas");
+          mc.width = bw; mc.height = bh;
+          var mctx = mc.getContext("2d");
+          mctx.drawImage(img, 0, 0, bw, bh);
+          var md = mctx.getImageData(0, 0, bw, bh).data;
+          var full = new Uint8Array(frameW * frameH);
+          var setCount = 0;
+          for (var yy = 0; yy < bh; yy++) {
+            for (var xx = 0; xx < bw; xx++) {
+              var sidx = (yy * bw + xx) * 4;
+              // Grayscale probability → luminance (R). If the PNG turns out to be
+              // alpha-encoded (R=0, A=prob) instead, fall back to the alpha byte.
+              var prob = md[sidx + 3] === 255 ? md[sidx] : md[sidx + 3];
+              if (prob >= 127) { full[(y0 + yy) * frameW + (x0 + xx)] = 1; setCount++; }
+            }
+          }
+          // A real PNG that thresholds to (almost) nothing means the model didn't
+          // actually localize the object. Report "not found" instead of baking an
+          // empty edit and falsely telling the user it worked.
+          if (setCount < 8) {
+            var ne = new Error("not_found"); ne.reason = "not_found"; reject(ne); return;
+          }
+          resolve({ mask: full, w: frameW, h: frameH });
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function () { reject(new Error("mask_decode")); };
+      img.src = "data:image/png;base64," + maskB64;
+    });
+  }
+
+  // POST photo + object name to the proxy → resolve { mask,w,h } ready for
+  // bakeRegionEdit, or reject with an Error whose .reason drives the chat copy:
+  //   "not_found"    → object isn't in the photo
+  //   "rate_limited" → too many requests / quota, try later
+  //   "unavailable"  → no key / network / upstream / decode error
+  function segmentViaServer(base, target) {
+    function mkErr(reason) { var e = new Error(reason); e.reason = reason; return e; }
+    // Build the JPEG upload defensively: toDataURL can throw on an oversized or
+    // tainted canvas. A synchronous throw here would escape the promise chain and
+    // strand the busy spinner, so turn it into a normal rejection instead.
+    var up;
+    try {
+      up = canvasToUploadJpeg(base, SEG_UPLOAD_MAX);
+    } catch (e) {
+      return Promise.reject(mkErr("unavailable"));
+    }
+    var ctrl  = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, SEG_TIMEOUT_MS) : null;
+    function done() { if (timer) { clearTimeout(timer); timer = null; } }
+    return fetch(SEG_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: up.url, target: target }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+      done();
+      return r.json().catch(function () { return null; });
+    }).then(function (data) {
+      if (!data) throw mkErr("unavailable");
+      if (data.ok && data.mask && data.box) {
+        return decodeServerMask(data.mask, data.box, up.w, up.h);
+      }
+      var reason = data.reason || "unavailable";
+      if (reason === "not_found") throw mkErr("not_found");
+      if (reason === "rate_limited" || reason === "quota") throw mkErr("rate_limited");
+      throw mkErr("unavailable");
+    }).catch(function (err) {
+      done();
+      if (err && err.reason) throw err;   // our mapped reason → preserve it
+      throw mkErr("unavailable");         // network / abort / decode → generic
+    });
+  }
+
+  // Orchestrator: segment server-side → bake the edit into state.objectLayer, then
   // recompute() (which re-applies any other active ops and re-renders the mosaic).
   // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
+  // Works on every device (incl. iPhone) because no heavy model loads in-browser.
   function runObjectEdit(objMatch, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
-    // The text-driven object detector (OWL-ViT / DETR) + SlimSAM run as heavy
-    // WASM models. On phones, loading them can blow past the browser's per-tab
-    // memory ceiling and the OS kills the page ("Diese Seite konnte nicht geladen
-    // werden") — an OOM that is NOT catchable in JS. So we only run the pipeline
-    // on mobile when the device reports plenty of RAM (isCapableMobile); on every
-    // other phone (incl. all iPhones, which report no memory value) we show a
-    // friendly note instead. Desktop always runs it. lowMem mode (any mobile we
-    // do run on) disposes each model before loading the next so two heavy models
-    // never co-reside — see disposeDetectors/disposeSam.
-    var lowMem = isMobileDevice();
-    if (lowMem && !isCapableMobile()) {
-      setBusy(false);
-      clearStatus();
-      addMsg(tr("aiChatObjectMobile"), "bot");
-      return;
-    }
-    var label = objMatch.key;
+    var label  = objMatch.key;
+    var target = objMatch.entry.q || objMatch.key;   // English query Gemini prefers
     setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
     setBusy(true);
-    setStatus(tr("aiChatObjectModelLoading"));
     addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
 
-    // Defer the heavy model load + inference one frame so the loading overlay
-    // actually paints first. When the model is already cached, loadTransformers()
-    // resolves synchronously and the inference would otherwise run as a microtask
-    // before any render — the user sees a freeze with no spinner (esp. on the
-    // not-found path, which finishes without ever yielding to a paint).
+    // Defer one frame so the busy overlay paints before we build the JPEG upload.
     requestAnimationFrame(function () {
-    var base = workBase();
-    var image;
-    loadTransformers()
-      .then(function () {
-        // Feed the models a memory-capped frame (DETECT_MAX) so a big upload
-        // can't OOM the tab. The mask returns in this space and is resampled
-        // back to the working grid in bakeRegionEdit → resampleMask.
-        image = canvasToRawImage(downscaleForVision(base));
-        return detectObject(image, objMatch.entry);
-      })
-      .then(function (box) {
-        // Free the detector before SlimSAM loads so the two never co-reside in
-        // the WASM heap (mobile only; desktop keeps them cached for speed).
-        if (lowMem) disposeDetectors();
-        if (!box) { return null; }
-        return segmentBox(image, box);
-      })
-      .then(function (seg) {
-        // Mask is already extracted into a plain array → SlimSAM can go now.
-        if (lowMem) disposeSam();
-        if (!seg) {
-          // not found → bail cleanly, no edit
-          clearStatus();
-          setBusy(false);
-          addMsg(tr("aiChatObjectNotFound").replace("{obj}", label), "bot");
-          return;
-        }
-        // Resample → dilate 2px → bake → re-render, all in bakeRegionEdit
-        // (which owns the busy lock from here and clears it on finish).
-        clearStatus();
-        bakeRegionEdit(seg, action, colorObj, 2, function () {
-          if (action === "remove") {
-            addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
-          } else {
-            addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
-          }
-        });
-      })
-      .catch(function () {
-        // Free both models on any failure too, so a thrown/rejected pipeline
-        // doesn't leave a heavy model resident and OOM the next attempt.
-        if (lowMem) { disposeDetectors(); disposeSam(); }
+      try {
+        var base = workBase();
+        segmentViaServer(base, target)
+          .then(function (seg) {
+            // Resample → dilate 2px → bake → re-render, all in bakeRegionEdit
+            // (which owns the busy lock from here and clears it on finish).
+            clearStatus();
+            bakeRegionEdit(seg, action, colorObj, 2, function () {
+              if (action === "remove") {
+                addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
+              } else {
+                addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
+              }
+            });
+          })
+          .catch(function (err) {
+            clearStatus();
+            setBusy(false);
+            var reason = (err && err.reason) || "unavailable";
+            if (reason === "not_found") {
+              addMsg(tr("aiChatObjectNotFound").replace("{obj}", label), "bot");
+            } else {
+              // rate_limited and unavailable both read as "try again later".
+              addMsg(tr("aiChatObjectUnavailable"), "bot");
+            }
+          });
+      } catch (e) {
+        // Last-resort guard: if anything above throws synchronously (e.g.
+        // workBase), still release the busy lock so the chat never freezes.
         clearStatus();
         setBusy(false);
         addMsg(tr("aiChatObjectUnavailable"), "bot");
-      });
+      }
     });
   }
 
