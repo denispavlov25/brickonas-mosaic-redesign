@@ -254,7 +254,7 @@ const translations = {
         aiChatSend: "Senden",
         aiChatThinking: "Einen Moment …",
         aiChatError: "Hoppla, da ist etwas schiefgelaufen. Versuch es bitte nochmal – am besten mit einem etwas einfacheren Wunsch (z. B. „Hintergrund blau“ oder „Bild optimieren“).",
-        aiChatGreeting: "Hi! Sag mir einfach, was ich mit deinem Bild machen soll. Zum Beispiel: ein Objekt entfernen oder eine Farbe gegen eine andere tauschen („aus Orange mach Blau“). Auch feine Details gehen bei Porträts – z. B. „Augen blau machen“ oder „Lippen rot“.",
+        aiChatGreeting: "Hi! Sag mir einfach, was ich mit deinem Bild machen soll. Zum Beispiel: den Hintergrund entfernen oder einfärben, eine Farbe gegen eine andere tauschen („aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Bei Porträts gehen auch feine Details – z. B. „Augen blau machen“ oder „Lippen rot“.",
         aiChatOffTopic: "Ich bin nur für die Bildbearbeitung da 🙂 Ich kann z. B. den Hintergrund entfernen oder einfärben, einzelne Farben austauschen (z. B. „aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Was möchtest du mit dem Bild machen?",
         aiChatDoneOptimize: "Erledigt – ich habe Kontrast und Farben fürs Mosaik kräftiger gemacht.",
         aiChatDoneBg: "Erledigt – der Hintergrund ist entfernt. Du kannst auch eine Hintergrundfarbe wählen.",
@@ -280,6 +280,11 @@ const translations = {
         aiChatObjectAsk: "Soll ich „{obj}“ entfernen oder umfärben? Sag z. B. „entferne den {obj}“ oder „färbe den {obj} blau“.",
         aiChatObjectUnavailable: "Die KI-Objekterkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
         aiChatObjectMobile: "Ein einzelnes Objekt per Text zu finden und zu bearbeiten (z. B. „färbe den Tiger blau“) braucht so viel Speicher, dass der Browser am Handy abstürzen kann. Mach das am besten am Computer. Am Handy klappen alle anderen Wünsche problemlos – z. B. „Hintergrund entfernen“, „Bild optimieren“, „heller“/„dunkler“, „Schwarz-Weiß“ oder „Hintergrund blau“. Bei Porträts gehen auch „Augen blau“ oder „Lippen rot“.",
+
+        // Honest fallback when no precise on-device mask is available.
+        aiChatObjectManual: "Einzelne Objekte (z. B. „den Tiger“) kann ich im Foto leider nicht automatisch auswählen. Ich kann aber das ganze Bild umfärben, einzelne Farben tauschen („aus Orange mach Blau“), den Hintergrund entfernen oder einfärben, das Bild optimieren, heller/dunkler machen oder in Schwarz-Weiß umwandeln. Bei einem Porträt gehen außerdem Augen, Augenbrauen, Lippen und Nase – z. B. „Lippen rot“.",
+        aiChatFaceNotFound: "Ich konnte im Foto kein klares Gesicht erkennen. Augen, Augenbrauen, Lippen und Nase kann ich nur bei einem gut sichtbaren Porträt einfärben.",
+        aiChatFaceUnavailable: "Die Gesichtserkennung ließ sich gerade nicht laden. Bitte lade die Seite neu und versuch es noch einmal.",
 
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",

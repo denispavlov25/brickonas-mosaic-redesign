@@ -941,8 +941,8 @@
     { keys: ["wand"], coco: null, q: "wall" },
     { keys: ["ball"], coco: null, q: "ball" },
     { keys: ["tier"], coco: null, q: "animal" },
-    { keys: ["lippen", "mund"], coco: null, q: "lips" },
-    { keys: ["nase"], coco: null, q: "nose" },
+    { keys: ["lippen", "mund"], coco: null, q: "lips", face: "lips" },
+    { keys: ["nase"], coco: null, q: "nose", face: "nose" },
     { keys: ["haut"], coco: null, q: "skin" },
     { keys: ["möbel"], coco: null, q: "furniture" },
     { keys: ["tiger"], coco: null, q: "tiger" }
@@ -1341,10 +1341,16 @@
     });
   }
 
+  // NOTE: CURRENTLY UNUSED (minimal build). Arbitrary object-by-name editing is
+  // disabled: the Gemini /segment API returns no usable PNG mask (only internal
+  // <seg> vision tokens), so this path could never succeed. The routing now
+  // sends arbitrary objects to an honest "manual" message and face parts to
+  // runFacePartEdit instead. Kept (with segmentViaServer/decodeServerMask) for a
+  // future tap-to-select path; the photo is never uploaded while this is unused.
+  //
   // Orchestrator: segment server-side → bake the edit into state.objectLayer, then
   // recompute() (which re-applies any other active ops and re-renders the mosaic).
   // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
-  // Works on every device (incl. iPhone) because no heavy model loads in-browser.
   function runObjectEdit(objMatch, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
     var label  = objMatch.key;
@@ -1401,13 +1407,12 @@
   }
 
   // Face-part edit (eyes / nose / lips / eyebrows): builds a PRECISE mask from
-  // MediaPipe FaceLandmarker — the on-device model the coarse OWL-ViT detector
-  // couldn't match on small facial parts. If no human face is present (e.g. an
-  // animal photo), it transparently falls back to the generic detector so the
-  // request still does its best instead of silently failing.
+  // MediaPipe FaceLandmarker — a light on-device model that's iOS-safe. If no
+  // human face is present (e.g. an animal photo), it says so honestly instead
+  // of pretending (arbitrary-object segmentation is intentionally not wired up).
   function runFacePartEdit(part, label, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
-    if (!window.bkRegion) { runObjectEdit(fallbackMatch(part, label), action, colorObj); return; }
+    if (!window.bkRegion) { addMsg(tr("aiChatFaceUnavailable"), "bot"); return; }
     setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
     setBusy(true);
     setStatus(tr("aiChatObjectModelLoading"));
@@ -1424,15 +1429,15 @@
             else addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
           });
         } else {
-          // No human face found → let the generic detector try (animals etc.).
+          // No human face found — be honest (face parts need a clear portrait).
           clearStatus();
           setBusy(false);
-          runObjectEdit(fallbackMatch(part, label), action, colorObj);
+          addMsg(tr("aiChatFaceNotFound"), "bot");
         }
       }).catch(function () {
         clearStatus();
         setBusy(false);
-        runObjectEdit(fallbackMatch(part, label), action, colorObj);
+        addMsg(tr("aiChatFaceUnavailable"), "bot");
       });
     });
   }
@@ -1690,6 +1695,11 @@
     // colour ops so "färbe den Hund blau" hits the object, not the background.
     var objMatch = findObject(text);
     if (objMatch && !bgWord) {
+      // Named arbitrary objects (tiger, car, dog …) can't be auto-segmented
+      // reliably — Gemini's API returns no usable mask and a heavy in-browser
+      // model crashes iOS. Be honest instead of failing with a misleading "not
+      // found". Face parts (eyes/eyebrows/lips/nose) DO work on-device below.
+      if (!objMatch.entry.face) { addMsg(tr("aiChatObjectManual"), "bot"); return; }
       var removeWord = /(entfern|wegmach|\bweg\b|\braus\b|l(ö|oe)sch|\bremove\b|\bdelete\b)/.test(text);
       var objColors = detectColorsOrdered(text);
       var recolorWord = /(umf(ä|ae)rb|f(ä|ae)rb|einf(ä|ae)rb|austausch|wechsel|colou?r)/.test(text);
@@ -1698,15 +1708,14 @@
         if (!need()) return;
         var objColor = objColors.length ? objColors[objColors.length - 1].col : detectColor(text);
         if (!objColor) { addMsg(tr("aiChatObjectNeedColor").replace("{obj}", objMatch.key), "bot"); return; }
-        // Face parts (eyes/nose/lips/eyebrows) → precise FaceLandmarker mask.
-        if (objMatch.entry.face) runFacePartEdit(objMatch.entry.face, objMatch.key, "recolor", objColor);
-        else runObjectEdit(objMatch, "recolor", objColor);
+        // Only face parts (eyes/nose/lips/eyebrows) reach here → precise
+        // on-device FaceLandmarker mask (arbitrary objects returned above).
+        runFacePartEdit(objMatch.entry.face, objMatch.key, "recolor", objColor);
         return;
       }
       if (removeWord) {
         if (!need()) return;
-        if (objMatch.entry.face) runFacePartEdit(objMatch.entry.face, objMatch.key, "remove", null);
-        else runObjectEdit(objMatch, "remove", null);
+        runFacePartEdit(objMatch.entry.face, objMatch.key, "remove", null);
         return;
       }
       // Object named but no clear action → ask what to do with it.
