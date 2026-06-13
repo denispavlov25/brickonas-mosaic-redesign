@@ -279,6 +279,7 @@ const translations = {
         aiChatObjectNeedColor: "Welche Farbe soll „{obj}“ bekommen? Sag z. B. „färbe den {obj} blau“.",
         aiChatObjectAsk: "Soll ich „{obj}“ entfernen oder umfärben? Sag z. B. „entferne den {obj}“ oder „färbe den {obj} blau“.",
         aiChatObjectUnavailable: "Die KI-Objekterkennung ließ sich gerade nicht laden. Bitte versuch es später noch einmal.",
+        aiChatObjectMobile: "Ein einzelnes Objekt per Text zu finden und zu bearbeiten (z. B. „färbe den Tiger blau“) braucht so viel Speicher, dass der Browser am Handy abstürzen kann. Mach das am besten am Computer. Am Handy klappen alle anderen Wünsche problemlos – z. B. „Hintergrund entfernen“, „Bild optimieren“, „heller“/„dunkler“, „Schwarz-Weiß“ oder „Hintergrund blau“. Bei Porträts gehen auch „Augen blau“ oder „Lippen rot“.",
 
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",

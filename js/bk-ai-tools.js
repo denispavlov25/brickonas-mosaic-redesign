@@ -49,10 +49,13 @@
   // model input size + the device's memory ceiling, NOT by the stud count. The
   // effective safeguard is therefore an adaptive cap: a smaller frame on phones
   // / tablets (where iOS Safari kills the web process), full 512px on desktop.
-  function pickDetectMax() {
+  // True on phones / tablets / low-memory devices — the ones where the heavy
+  // WASM vision models (transformers.js OWL-ViT / DETR / SlimSAM) can blow past
+  // the browser's per-tab memory ceiling and the OS kills the page ("Diese Seite
+  // konnte nicht geladen werden"). iOS Safari exposes no navigator.deviceMemory,
+  // so we also key off mobile UA + coarse pointer (touch) + small viewport.
+  function isMobileDevice() {
     try {
-      // Android / Chromium expose deviceMemory (GB). iOS Safari does NOT, so we
-      // also key off coarse pointer (touch) + small viewport + mobile UA.
       var mem = (typeof navigator !== "undefined" && navigator.deviceMemory) || 0;
       var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
       var isMobileUA = /iPhone|iPad|iPod|Android|Mobile|Silk|Kindle/i.test(ua);
@@ -63,14 +66,16 @@
         smallScreen = vw > 0 && vw <= 820; // phones + most tablets in portrait
       }
       var lowMem = mem > 0 && mem <= 4;        // <=4 GB device
-      var isMobile = isMobileUA || (coarse && smallScreen);
-      if (lowMem || isMobile) return 384;      // memory-constrained → safer frame
-      return 512;                              // desktop / roomy device
+      return isMobileUA || lowMem || (coarse && smallScreen);
     } catch (e) {
-      return 384; // on any uncertainty, prefer the safer (smaller) frame
+      return true; // on any uncertainty, treat as mobile (the safer assumption)
     }
   }
-  var DETECT_MAX = pickDetectMax();
+
+  // Memory-constrained devices get a smaller vision frame; desktop gets the full
+  // 512px. (On mobile the heavy object pipeline is skipped entirely anyway — see
+  // runObjectEdit — so this mainly bounds the MediaPipe / matte paths.)
+  var DETECT_MAX = isMobileDevice() ? 384 : 512;
 
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
@@ -1184,6 +1189,17 @@
   // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
   function runObjectEdit(objMatch, action, colorObj) {
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
+    // The text-driven object detector (OWL-ViT / DETR) + SlimSAM run as heavy
+    // WASM models. On phones / low-memory devices loading them OOM-kills the tab
+    // ("Diese Seite konnte nicht geladen werden"), so we never run that pipeline
+    // there. Every other edit (canvas ops + the light MediaPipe person/face
+    // models) stays available — object-by-name editing is desktop-only.
+    if (isMobileDevice()) {
+      setBusy(false);
+      clearStatus();
+      addMsg(tr("aiChatObjectMobile"), "bot");
+      return;
+    }
     var label = objMatch.key;
     setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
     setBusy(true);
