@@ -39,10 +39,38 @@
   // Resolution fed to the heavy vision models (DETR / OWL-ViT / SlimSAM). These
   // run as WASM and their peak memory scales with the input pixel count; on
   // memory-constrained mobile browsers a full 800px frame can push the tab over
-  // its limit and the OS kills it ("page could not be loaded"). 512px is plenty
-  // for box detection + a coarse object mask — the mask is resampled back up to
-  // the working grid (resampleMask) anyway, so the mosaic result is unchanged.
-  var DETECT_MAX = 512;
+  // its limit and the OS kills it ("page could not be loaded"). The mask comes
+  // back in this reduced space and is resampled back up to the working grid
+  // (resampleMask) anyway, so the mosaic result is unchanged regardless.
+  //
+  // IMPORTANT: the mosaic's stud resolution (e.g. 288x288 Noppen) does NOT feed
+  // these models — the chat always works on a <=WORK_MAX photo crop, and the
+  // display canvas is capped at 2000px upstream. So the OOM is driven by the
+  // model input size + the device's memory ceiling, NOT by the stud count. The
+  // effective safeguard is therefore an adaptive cap: a smaller frame on phones
+  // / tablets (where iOS Safari kills the web process), full 512px on desktop.
+  function pickDetectMax() {
+    try {
+      // Android / Chromium expose deviceMemory (GB). iOS Safari does NOT, so we
+      // also key off coarse pointer (touch) + small viewport + mobile UA.
+      var mem = (typeof navigator !== "undefined" && navigator.deviceMemory) || 0;
+      var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+      var isMobileUA = /iPhone|iPad|iPod|Android|Mobile|Silk|Kindle/i.test(ua);
+      var coarse = false, smallScreen = false;
+      if (typeof window !== "undefined") {
+        coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+        var vw = window.screen ? Math.min(window.screen.width, window.screen.height) : 0;
+        smallScreen = vw > 0 && vw <= 820; // phones + most tablets in portrait
+      }
+      var lowMem = mem > 0 && mem <= 4;        // <=4 GB device
+      var isMobile = isMobileUA || (coarse && smallScreen);
+      if (lowMem || isMobile) return 384;      // memory-constrained → safer frame
+      return 512;                              // desktop / roomy device
+    } catch (e) {
+      return 384; // on any uncertainty, prefer the safer (smaller) frame
+    }
+  }
+  var DETECT_MAX = pickDetectMax();
 
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
