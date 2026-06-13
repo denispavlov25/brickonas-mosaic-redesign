@@ -253,6 +253,7 @@ const translations = {
         aiChatPlaceholder: "Beschreibe, was ich mit dem Bild machen soll …",
         aiChatSend: "Senden",
         aiChatThinking: "Einen Moment …",
+        aiChatError: "Hoppla, da ist etwas schiefgelaufen. Versuch es bitte nochmal – am besten mit einem etwas einfacheren Wunsch (z. B. „Hintergrund blau“ oder „Bild optimieren“).",
         aiChatGreeting: "Hi! Sag mir einfach, was ich mit deinem Bild machen soll. Zum Beispiel: ein Objekt entfernen oder eine Farbe gegen eine andere tauschen („aus Orange mach Blau“). Auch feine Details gehen bei Porträts – z. B. „Augen blau machen“ oder „Lippen rot“.",
         aiChatOffTopic: "Ich bin nur für die Bildbearbeitung da 🙂 Ich kann z. B. den Hintergrund entfernen oder einfärben, einzelne Farben austauschen (z. B. „aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Was möchtest du mit dem Bild machen?",
         aiChatDoneOptimize: "Erledigt – ich habe Kontrast und Farben fürs Mosaik kräftiger gemacht.",

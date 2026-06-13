@@ -36,6 +36,14 @@
   // while still giving clean edges for background removal.
   var WORK_MAX = 800;
 
+  // Resolution fed to the heavy vision models (DETR / OWL-ViT / SlimSAM). These
+  // run as WASM and their peak memory scales with the input pixel count; on
+  // memory-constrained mobile browsers a full 800px frame can push the tab over
+  // its limit and the OS kills it ("page could not be loaded"). 512px is plenty
+  // for box detection + a coarse object mask — the mask is resampled back up to
+  // the working grid (resampleMask) anyway, so the mosaic result is unchanged.
+  var DETECT_MAX = 512;
+
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
   // KEEP IN SYNC WITH bk_ai_chat_colors() in mu-plugins/bk-ai-chat-proxy.php
@@ -958,6 +966,24 @@
     return new _tf.RawImage(new Uint8ClampedArray(id.data), canvas.width, canvas.height, 4);
   }
 
+  // Return a copy of `canvas` shrunk so its longest side is <= DETECT_MAX (the
+  // original is returned untouched if already small enough). Used ONLY to feed
+  // the heavy vision models a memory-safe frame; detection boxes and the SAM
+  // mask come back in this reduced space and are resampled to the working grid
+  // by resampleMask(), so nothing downstream needs the box rescaled.
+  function downscaleForVision(canvas) {
+    var w = canvas.width, h = canvas.height, m = Math.max(w, h);
+    if (m <= DETECT_MAX) return canvas;
+    var s = DETECT_MAX / m;
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * s));
+    c.height = Math.max(1, Math.round(h * s));
+    var cx = c.getContext("2d");
+    cx.imageSmoothingEnabled = true;
+    cx.drawImage(canvas, 0, 0, c.width, c.height);
+    return c;
+  }
+
   // Detect the object's bounding box {xmin,ymin,xmax,ymax} or null. COCO words
   // use DETR only (no OWL fallback → no surprise 148 MB download); open-vocab
   // words use OWL-ViT.
@@ -1146,7 +1172,10 @@
     var image;
     loadTransformers()
       .then(function () {
-        image = canvasToRawImage(base);
+        // Feed the models a memory-capped frame (DETECT_MAX) so a big upload
+        // can't OOM the tab. The mask returns in this space and is resampled
+        // back to the working grid in bakeRegionEdit → resampleMask.
+        image = canvasToRawImage(downscaleForVision(base));
         return detectObject(image, objMatch.entry);
       })
       .then(function (box) {
@@ -1396,6 +1425,27 @@
     return /^(hallo|hi|hey|moin|servus|na|guten (tag|morgen|abend)|hilfe|help|was kannst du( so)?|was geht|wie funktioniert( das)?)[\s!?.,]*$/i.test(text);
   }
 
+  // Bring the UI back to a safe idle state after ANY unexpected failure: drop
+  // the busy lock + overlay, clear the loading note, remove a stuck typing
+  // bubble. Used by the global error handlers and the chat try/catch so a
+  // thrown error in a heavy op can never leave the panel frozen.
+  function recoverUI() {
+    try { setBusy(false); } catch (e) {}
+    try { clearStatus(); } catch (e2) {}
+    if (els.chatLog) {
+      var t = els.chatLog.querySelector(".bk-ai-typing");
+      if (t && t.parentNode) t.parentNode.removeChild(t);
+    }
+  }
+
+  // Run a chat action with a safety net: any synchronous throw is swallowed,
+  // the UI is recovered, and the user gets a friendly note instead of a frozen
+  // (or crashed) panel.
+  function safely(fn) {
+    try { fn(); }
+    catch (e) { recoverUI(); addMsg(tr("aiChatError"), "bot"); }
+  }
+
   // Public chat entry: echo the user, ask the LLM, dispatch — fall back to the
   // offline parser on any proxy failure so the chat always responds.
   function handleChat(raw) {
@@ -1407,10 +1457,10 @@
     var typing = showTyping();
     askLLM(text).then(function (intent) {
       hideTyping(typing);
-      dispatchIntent(intent, text);
+      safely(function () { dispatchIntent(intent, text); });
     })["catch"](function () {
       hideTyping(typing);
-      routeLocal(text);
+      safely(function () { routeLocal(text); });
     });
   }
 
@@ -1660,6 +1710,19 @@
     });
     var backBtn = document.getElementById("back-to-step1-btn");
     if (backBtn) backBtn.addEventListener("click", function () { resetForNewImage(); });
+
+    // Last line of defence: if ANYTHING in a heavy op throws asynchronously (a
+    // rejected model promise, a WASM error, etc.) it would otherwise surface as
+    // an uncaught error and leave the panel stuck behind the busy overlay. Catch
+    // it globally, unlock the UI and tell the user — only while WE are busy, so
+    // we never swallow unrelated page errors. (A true out-of-memory tab kill is
+    // not catchable in JS; the DETECT_MAX downscale above is what prevents that.)
+    window.addEventListener("unhandledrejection", function () {
+      if (state.busy) { recoverUI(); addMsg(tr("aiChatError"), "bot"); }
+    });
+    window.addEventListener("error", function () {
+      if (state.busy) { recoverUI(); addMsg(tr("aiChatError"), "bot"); }
+    });
   }
 
   if (document.readyState === "loading") {
