@@ -3925,8 +3925,15 @@ function showVisualStep(vstep) {
         stepProcessed[1] = true;
     }
 
-    // Scroll to top
+    // Scroll to the top of the new step. Standalone: scroll our own window.
+    // Embedded (iframe): the PARENT page is the scroll container (the iframe is
+    // sized to its content), so window.scrollTo here wouldn't move the user's
+    // viewport — ask the parent to bring the iframe's top into view instead, so on
+    // mobile the user lands on the step's image, not scrolled down at the buttons.
     window.scrollTo(0, 0);
+    if (window.self !== window.top) {
+        window.parent.postMessage({ type: 'mosaic-scroll-top' }, '*');
+    }
     // Tell parent iframe about height change
     window.parent.postMessage({ type: 'mosaic-resize', height: document.body.scrollHeight }, '*');
 }
@@ -4112,19 +4119,28 @@ var BK_CART_SVG = '<svg width="18" height="18" fill="none" stroke="currentColor"
 function setOrderButtonState(state) {
     var btn = document.getElementById('order-mosaic-button');
     if (!btn) return;
+    // The frame add-on is committed together with the cart line, so once an order
+    // is in flight or already added we LOCK the frame checkbox. This kills the
+    // "toggle frame → button re-enables → order again → mosaic twice in cart" bug.
+    var fcb = document.getElementById('mosaic-frame-checkbox');
     btn.classList.remove('bk-adding', 'bk-added');
     if (state === 'adding') {
         btn.disabled = true;
         btn.classList.add('bk-adding');
         btn.innerHTML = BK_CART_SVG + ' Wird hinzugefügt';
+        if (fcb) fcb.disabled = true;
     } else if (state === 'added') {
         btn.disabled = true;
         btn.classList.add('bk-added');
         btn.innerHTML = 'Im Warenkorb';
+        // Mosaic is locked (no duplicate), but the frame add-on stays CLICKABLE so the
+        // customer can still add/remove just the frame from the cart afterwards.
+        if (fcb && typeof isFrameEligible === 'function' && isFrameEligible()) fcb.disabled = false;
     } else {
-        // idle
+        // idle — a fresh order is possible again; re-enable the frame choice if eligible
         btn.disabled = false;
         btn.innerHTML = BK_CART_SVG + ' Bestellen';
+        if (fcb && typeof isFrameEligible === 'function' && isFrameEligible()) fcb.disabled = false;
     }
 }
 
@@ -4194,6 +4210,11 @@ function getMosaicProductId() {
 // Frame add-on (only available for 48x48 / 48er Platten)
 var FRAME_PRODUCT_ID = 908; // BRICKONAS Mosaik-Rahmen 48x48 (simple, sale 29 €)
 var FRAME_VARIATION_KEY = '48er_48x48';
+// Whether the frame product is currently in the cart, and whether the in-flight
+// order included it — so the frame can be toggled in/out of the cart AFTER the
+// mosaic is added, without ever re-adding (duplicating) the mosaic.
+var frameInCart = false;
+var pendingFrameAdd = false;
 
 function isFrameEligible() {
     return getMosaicVariationKey() === FRAME_VARIATION_KEY;
@@ -4221,9 +4242,29 @@ function updateFrameAddonVisibility() {
     var cb = document.getElementById('mosaic-frame-checkbox');
     if (!cb) return;
     cb.addEventListener('change', function(){
-        if (typeof updateMosaicProductMeta === 'function') updateMosaicProductMeta();
+        var ob = document.getElementById('order-mosaic-button');
+        if (ob && ob.classList.contains('bk-added')) {
+            toggleFrameInCart(cb.checked); // mosaic already in cart → add/remove ONLY the frame, live
+        } else if (typeof updateMosaicProductMeta === 'function') {
+            updateMosaicProductMeta(); // pre-order: just refresh the bundled price
+        }
     });
 })();
+
+// Add or remove ONLY the frame product (FRAME_PRODUCT_ID) from the cart, after the
+// mosaic was already ordered. The parent WP page owns the WC cart and does the work.
+function toggleFrameInCart(wantFrame) {
+    if (wantFrame === frameInCart) return; // already in sync, nothing to do
+    var statusEl = document.getElementById('mosaic-order-status');
+    var embedded = (window.self !== window.top);
+    if (wantFrame) {
+        if (embedded) window.parent.postMessage({ type: 'mosaic-frame-add', frameProductId: FRAME_PRODUCT_ID }, '*');
+        if (statusEl) { statusEl.className = 'mosaic-order-status bk-sending'; statusEl.innerHTML = '⏳ Rahmen wird hinzugefügt…'; }
+    } else {
+        if (embedded) window.parent.postMessage({ type: 'mosaic-frame-remove', frameProductId: FRAME_PRODUCT_ID }, '*');
+        if (statusEl) { statusEl.className = 'mosaic-order-status bk-sending'; statusEl.innerHTML = '⏳ Rahmen wird entfernt…'; }
+    }
+}
 if (orderMosaicBtn) {
     orderMosaicBtn.addEventListener('click', async function() {
         console.log('[BRICKONAS] Bestellen button clicked');
@@ -4279,7 +4320,8 @@ if (orderMosaicBtn) {
             var variationInfo = getMosaicVariationInfo();
             var plateAttr = PLATE_WIDTH === 32 ? '32er' : '48er';
             var resAttr = Number(targetResolution[0]) + 'x' + Number(targetResolution[1]);
-            var addFrame = isFrameEligible() && isFrameSelected();
+            var addFrame = isFrameEligible() && isFrameSelected() && !frameInCart;
+            pendingFrameAdd = addFrame;
             console.log('[BRICKONAS] Sending add-to-cart message to parent. parent:', getMosaicProductId(), 'variation:', variationInfo, 'attrs:', plateAttr, resAttr, 'frame:', addFrame, 'token:', mosaicToken);
             if (window.self !== window.top) {
                 window.parent.postMessage({
@@ -4356,6 +4398,18 @@ if (orderMosaicBtn) {
     // Listen for response from parent
     window.addEventListener('message', function(e) {
         if (e.data) {
+            if (e.data.type === 'mosaic-frame-result') {
+                var ffcb = document.getElementById('mosaic-frame-checkbox');
+                var fst = document.getElementById('mosaic-order-status');
+                if (e.data.success) {
+                    frameInCart = (e.data.action === 'add');
+                    if (fst) { fst.className = 'mosaic-order-status bk-sent'; fst.innerHTML = (e.data.action === 'add' ? '✓ <strong>Rahmen zum Warenkorb hinzugefügt.</strong>' : '✓ <strong>Rahmen aus dem Warenkorb entfernt.</strong>'); }
+                } else {
+                    if (ffcb) ffcb.checked = frameInCart; // revert to the real cart state
+                    if (fst) { fst.className = 'mosaic-order-status bk-error'; fst.innerHTML = '⚠ Rahmen konnte nicht aktualisiert werden. Bitte versuche es erneut.'; }
+                }
+                return;
+            }
             if (e.data.type === 'mosaic-cart-result') {
                 console.log('[BRICKONAS] Cart result:', e.data.success);
                 var btn = document.getElementById('order-mosaic-button');
@@ -4365,6 +4419,8 @@ if (orderMosaicBtn) {
                     // PERSISTENT confirmation — button stays "Im Warenkorb ✓" and
                     // a clear green message stays until the customer changes the
                     // configuration, so they know the mosaic is in the cart.
+                    if (pendingFrameAdd) frameInCart = true;
+                    pendingFrameAdd = false;
                     setOrderButtonState('added');
                     if (statusElCart && !statusElCart.classList.contains('bk-error')) {
                         statusElCart.className = 'mosaic-order-status bk-sent';
@@ -4455,12 +4511,15 @@ function updateMosaicProductMeta() {
         priceEl.innerHTML = formatted + ' &euro;';
         priceEl.style.display = '';
     }
-    // Reset the order button to its idle state whenever the configuration
-    // changes (resolution/frame). This clears a previous "Im Warenkorb ✓"
-    // confirmation so the customer can deliberately order the new variant.
+    // Reset the order button to its idle state when the configuration changes
+    // (e.g. the customer picks a different resolution) so they can deliberately
+    // order the new variant. We only reset a COMPLETED add ('bk-added') — never an
+    // in-flight one ('bk-adding'), so a config change mid-upload can't spawn a
+    // second add. The frame toggle never reaches this path: the frame checkbox is
+    // locked while adding/added (see setOrderButtonState).
     var btn = document.getElementById('order-mosaic-button');
     if (btn) {
-        if (typeof setOrderButtonState === 'function' && (btn.classList.contains('bk-added') || btn.classList.contains('bk-adding'))) {
+        if (typeof setOrderButtonState === 'function' && btn.classList.contains('bk-added')) {
             setOrderButtonState('idle');
             var prevStatus = document.getElementById('mosaic-order-status');
             if (prevStatus && prevStatus.classList.contains('bk-sent')) {
