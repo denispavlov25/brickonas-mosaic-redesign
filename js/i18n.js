@@ -254,7 +254,7 @@ const translations = {
         aiChatSend: "Senden",
         aiChatThinking: "Einen Moment …",
         aiChatError: "Hoppla, da ist etwas schiefgelaufen. Versuch es bitte nochmal – am besten mit einem etwas einfacheren Wunsch (z. B. „Hintergrund blau“ oder „Bild optimieren“).",
-        aiChatGreeting: "Hi! Sag mir einfach, was ich mit deinem Bild machen soll. Zum Beispiel: den Hintergrund entfernen oder einfärben, eine Farbe gegen eine andere tauschen („aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Bei Porträts gehen auch feine Details – z. B. „Augen blau machen“ oder „Lippen rot“.",
+        aiChatGreeting: "Hi! 👋 Schreib einfach, was ich mit deinem Foto machen soll – z. B. „mach den Hintergrund blau“, „färb den Pulli rot“, „aus Orange mach Blau“ oder „optimiere das Foto“. Ich setze es direkt um und passe die Farben an unsere Steinfarben an.",
         aiChatOffTopic: "Ich bin nur für die Bildbearbeitung da 🙂 Ich kann z. B. den Hintergrund entfernen oder einfärben, einzelne Farben austauschen (z. B. „aus Orange mach Blau“), das Bild optimieren oder in Schwarz-Weiß umwandeln. Was möchtest du mit dem Bild machen?",
         aiChatDoneOptimize: "Erledigt – ich habe Kontrast und Farben fürs Mosaik kräftiger gemacht.",
         aiChatDoneBg: "Erledigt – der Hintergrund ist entfernt. Du kannst auch eine Hintergrundfarbe wählen.",
@@ -285,6 +285,15 @@ const translations = {
         aiChatObjectManual: "Einzelne Objekte (z. B. „den Tiger“) kann ich im Foto leider nicht automatisch auswählen. Ich kann aber das ganze Bild umfärben, einzelne Farben tauschen („aus Orange mach Blau“), den Hintergrund entfernen oder einfärben, das Bild optimieren, heller/dunkler machen oder in Schwarz-Weiß umwandeln. Bei einem Porträt gehen außerdem Augen, Augenbrauen, Lippen und Nase – z. B. „Lippen rot“.",
         aiChatFaceNotFound: "Ich konnte im Foto kein klares Gesicht erkennen. Augen, Augenbrauen, Lippen und Nase kann ich nur bei einem gut sichtbaren Porträt einfärben.",
         aiChatFaceUnavailable: "Die Gesichtserkennung ließ sich gerade nicht laden. Bitte lade die Seite neu und versuch es noch einmal.",
+
+        // Server-side AI image edit (Gemini) — busy overlay + chat status/results.
+        aiEditBusyTitle: "KI bearbeitet dein Bild …",
+        aiEditBusySub: "Die KI bearbeitet dein Bild – meist ein paar Sekunden, gelegentlich etwas länger.",
+        aiEditWorking: "Alles klar – ich bearbeite dein Bild. Das dauert meist ein paar Sekunden, manchmal etwas länger …",
+        aiEditDone: "Erledigt – ich habe dein Bild wie gewünscht angepasst.",
+        aiEditUnavailable: "Das hat gerade nicht geklappt. Bitte versuch es gleich noch einmal – oder formuliere deinen Wunsch etwas einfacher (z. B. „Hintergrund blau“ oder „Bild optimieren“).",
+        aiEditRateLimited: "Gerade sind sehr viele Anfragen unterwegs. Bitte warte einen Moment und versuch es dann noch einmal.",
+        aiEditBlocked: "Diesen Wunsch konnte die KI leider nicht umsetzen. Versuch es bitte mit einer anderen Formulierung oder einem anderen Bild.",
 
         // Style picker (Step 2)
         stylePickerLabel: "Wähle einen Stil",

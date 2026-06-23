@@ -1506,7 +1506,10 @@ function _runStep2Body() {
             croppedCanvas.width = targetResolution[0];
             croppedCanvas.height = targetResolution[1];
             const bkCtx = croppedCanvas.getContext("2d");
-            bkCtx.imageSmoothingEnabled = false;
+            // Area-averaging downscale (smoother + keeps more detail than nearest-neighbor).
+            // "high" = the browser's Lanczos-like resampler. See docs 09 (Stufe 1).
+            bkCtx.imageSmoothingEnabled = true;
+            bkCtx.imageSmoothingQuality = "high";
             bkCtx.drawImage(bkAiSource, 0, 0, targetResolution[0], targetResolution[1]);
         } else {
             croppedCanvas = inputImageCropper.getCroppedCanvas({
@@ -1514,7 +1517,8 @@ function _runStep2Body() {
                 height: targetResolution[1],
                 maxWidth: 4096,
                 maxHeight: 4096,
-                imageSmoothingEnabled: false,
+                imageSmoothingEnabled: true,
+                imageSmoothingQuality: "high",
             });
         }
         if (!croppedCanvas) {

@@ -7,16 +7,17 @@
  * Plus an intent-scoped mini-chat that ONLY understands image commands
  * and politely refuses anything off-topic.
  *
- * Privacy: ALL image processing runs in the browser — the photo never
- * leaves the device. Two features reach the network, and neither sends
- * the image:
- *   - object-aware edits stream ML models (DETR/OWL-ViT/SlimSAM) from a
- *     public CDN on first use (see OBJ_SYN block below);
+ * Privacy / network: most ops run 100% in the browser (optimize, grayscale,
+ * brightness, selective recolor, background flood-fill). Two paths reach the net:
  *   - the chat sends only the typed TEXT to a same-origin proxy
  *     (mu-plugin bk-ai-chat-proxy.php) which calls Gemini for intent
- *     classification, then executes the result locally. The API key
- *     stays server-side; if the proxy is unreachable the chat falls back
- *     to the offline regex parser (routeLocal). See askLLM/dispatchIntent.
+ *     classification, then executes the result locally. See askLLM/dispatchIntent.
+ *   - "smart" edits (recolor an object, remove/replace background, optimize via
+ *     AI, …) send the DOWNSCALED working photo + an English instruction to the
+ *     same proxy's /edit route, which calls Gemini's image model and returns a
+ *     full edited image. See editViaServer. The API key stays server-side; if the
+ *     proxy is unreachable the chat falls back to the offline regex parser
+ *     (routeLocal) for the in-browser ops, and edits show a graceful note.
  *
  * Integration contract with js/index.js (all globals it relies on):
  *   - inputImageCropper        CropperJS instance (alive on step 2)
@@ -31,60 +32,11 @@
 (function () {
   "use strict";
 
-  // Working resolution for the in-browser image ops. The mosaic itself is
-  // very low-res (tens of studs), so a capped source keeps every op fast
-  // while still giving clean edges for background removal.
+  // Working resolution for the in-browser image ops (background flood-fill,
+  // recolor, optimize). The mosaic itself is very low-res (tens of studs), so a
+  // capped source keeps every op fast while still giving clean edges. Server-side
+  // AI edits upload their own (larger, EDIT_UPLOAD_MAX) JPEG — see editViaServer.
   var WORK_MAX = 800;
-
-  // Resolution fed to the heavy vision models (DETR / OWL-ViT / SlimSAM). These
-  // run as WASM and their peak memory scales with the input pixel count; on
-  // memory-constrained mobile browsers a full 800px frame can push the tab over
-  // its limit and the OS kills it ("page could not be loaded"). The mask comes
-  // back in this reduced space and is resampled back up to the working grid
-  // (resampleMask) anyway, so the mosaic result is unchanged regardless.
-  //
-  // IMPORTANT: the mosaic's stud resolution (e.g. 288x288 Noppen) does NOT feed
-  // these models — the chat always works on a <=WORK_MAX photo crop, and the
-  // display canvas is capped at 2000px upstream. So the OOM is driven by the
-  // model input size + the device's memory ceiling, NOT by the stud count. The
-  // effective safeguard is therefore an adaptive cap: a smaller frame on phones
-  // / tablets (where iOS Safari kills the web process), full 512px on desktop.
-  // True on phones / tablets / low-memory devices — the ones where the heavy
-  // WASM vision models (transformers.js OWL-ViT / DETR / SlimSAM) can blow past
-  // the browser's per-tab memory ceiling and the OS kills the page ("Diese Seite
-  // konnte nicht geladen werden"). iOS Safari exposes no navigator.deviceMemory,
-  // so we also key off mobile UA + coarse pointer (touch) + small viewport.
-  function isMobileDevice() {
-    try {
-      var mem = (typeof navigator !== "undefined" && navigator.deviceMemory) || 0;
-      var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
-      var isMobileUA = /iPhone|iPad|iPod|Android|Mobile|Silk|Kindle/i.test(ua);
-      var coarse = false, smallScreen = false;
-      if (typeof window !== "undefined") {
-        coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-        var vw = window.screen ? Math.min(window.screen.width, window.screen.height) : 0;
-        smallScreen = vw > 0 && vw <= 820; // phones + most tablets in portrait
-      }
-      var lowMem = mem > 0 && mem <= 4;        // <=4 GB device
-      return isMobileUA || lowMem || (coarse && smallScreen);
-    } catch (e) {
-      return true; // on any uncertainty, treat as mobile (the safer assumption)
-    }
-  }
-
-  // Memory-constrained devices get a smaller vision frame; desktop gets 512px.
-  var DETECT_MAX = isMobileDevice() ? 320 : 512;
-
-  // Phones with plenty of RAM. Chrome reports navigator.deviceMemory in GB,
-  // quantized and capped at 8; iOS Safari + Firefox report nothing (→ 0). Only
-  // these devices run the heavy object pipeline on mobile — and even then in
-  // low-memory mode (sequential load + dispose, see runObjectEdit). Everywhere
-  // else on mobile (incl. all iPhones, since they report no value), object-by-
-  // name editing shows a friendly note instead of risking a tab-killing OOM.
-  function isCapableMobile() {
-    var mem = (typeof navigator !== "undefined" && navigator.deviceMemory) || 0;
-    return mem >= 6;
-  }
 
   // Background colour palette offered after removal (name + hex). German
   // names are what the mini-chat matches against.
@@ -120,6 +72,67 @@
     "tuerkis": "türkis", "teal": "türkis", "cyan": "türkis",
     "brown": "braun"
   };
+
+  // PALETTE-FAITHFUL RECOLOR: each chat colour name → the EXACT hex of the
+  // closest CANONICAL, NON-HIDDEN BrickLink colour the mosaic can actually build
+  // (hand-picked by semantic name from js/bricklink-colors.js, verified against
+  // BK_HIDDEN_COLOR_NAMES). When the AI recolours, we tell Gemini to use THIS
+  // shade so the edited photo already lands on a colour the quantizer keeps clean
+  // — not the stylized display hex in COLORS (which is tuned for the swatch UI and
+  // can quantize muddy). NB türkis maps to Sand Green: the only true turquoise in
+  // the palette (Dark Turquoise) is hidden, so Sand Green is the cleanest teal we
+  // can actually place. Keep names in sync with COLORS above.
+  var BRICK_HEX = {
+    "weiß": "#ffffff",      // White
+    "schwarz": "#212121",   // Black
+    "grau": "#9c9c9c",      // Light Gray
+    "blau": "#0057a6",      // Blue
+    "hellblau": "#42c0fb",  // Medium Azure
+    "rot": "#b30006",       // Red
+    "grün": "#10cb31",      // Bright Green
+    "gelb": "#f7d117",      // Yellow
+    "orange": "#ff7e14",    // Orange
+    "rosa": "#f785b1",      // Medium Dark Pink
+    "lila": "#a5499c",      // Purple
+    "türkis": "#76a290",    // Sand Green
+    "braun": "#89351d"      // Reddish Brown
+  };
+
+  // Resolve a chat colour object → the brick-palette hex used in AI instructions.
+  // Falls back to the swatch hex if a name ever lacks a brick mapping.
+  function brickHex(colorObj) {
+    if (!colorObj) return null;
+    return BRICK_HEX[colorObj.name] || colorObj.hex;
+  }
+
+  // Compact "name #hex, …" list of the ACTIVE brick palette (already hidden-
+  // filtered when bricklink-colors.js loaded), appended to every AI edit prompt
+  // so Gemini stays inside the buildable colour set. Capped so the prompt stays
+  // small; computed once and cached. Falls back to the BRICK_HEX values if the
+  // global palette isn't present (e.g. unit test).
+  var _paletteCache = null;
+  function paletteGuidance() {
+    if (_paletteCache !== null) return _paletteCache;
+    var parts = [];
+    try {
+      if (typeof ALL_BRICKLINK_SOLID_COLORS !== "undefined" && ALL_BRICKLINK_SOLID_COLORS.length) {
+        var list = ALL_BRICKLINK_SOLID_COLORS;
+        // Cap at 48 so the prompt stays compact; the palette is ~80 after filter.
+        var step = list.length > 48 ? list.length / 48 : 1, taken = 0, nextAt = 0;
+        for (var i = 0; i < list.length; i++) {
+          if (i >= nextAt) {
+            parts.push(list[i].name + " " + list[i].hex);
+            taken++; nextAt += step;
+          }
+        }
+      }
+    } catch (e) { parts = []; }
+    if (!parts.length) {
+      for (var k in BRICK_HEX) if (BRICK_HEX.hasOwnProperty(k)) parts.push(k + " " + BRICK_HEX[k]);
+    }
+    _paletteCache = parts.join(", ");
+    return _paletteCache;
+  }
 
   // Feature state. baseCanvas = pristine crop; the working source is
   // recomputed from it on every change so toggles are composable/reversible.
@@ -669,7 +682,7 @@
     setBusy(true);
     setStatus(tr("aiSegLoading"));
     // Defer one frame so the loading overlay paints before the (cached-model)
-    // segmentation inference blocks the main thread — see runObjectEdit note.
+    // segmentation inference blocks the main thread.
     requestAnimationFrame(function () {
     window.bkSeg.segmentPerson(state.baseCanvas).then(function (r) {
       // Reject empty/degenerate masks (no subject, or the whole frame) — those
@@ -966,268 +979,38 @@
     return best ? { entry: best.entry, key: best.key } : null;
   }
 
-  // ML model holders — all lazy so a user who never edits an object pays nothing.
-  var _tf = null, _cocoDet = null, _owlDet = null, _samModel = null, _samProc = null;
-  var TF_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2";
+  // [Removed] The on-device object/face ML pipeline (transformers.js OWL-ViT /
+  // DETR + SlimSAM model loaders, detectObject / segmentBox, and the mask
+  // helpers + bakeRegionEdit) lived here. It OOM-killed mobile Safari and is no
+  // longer needed: every smart edit now goes through editViaServer() (Gemini
+  // image edit) below. Background-removal's on-device person mask (window.bkSeg)
+  // is unaffected — see ensureMask / removeBackgroundMask above.
 
-  function loadTransformers() {
-    if (_tf) return Promise.resolve(_tf);
-    // Dynamic import keeps this classic IIFE script while pulling the ESM lib.
-    return import(/* webpackIgnore: true */ TF_URL).then(function (m) {
-      m.env.allowLocalModels = false;
-      _tf = m;
-      return m;
-    });
-  }
-  function loadCoco() {
-    if (_cocoDet) return Promise.resolve(_cocoDet);
-    return loadTransformers().then(function (m) {
-      return m.pipeline("object-detection", "Xenova/detr-resnet-50", { dtype: "q8", device: "wasm" });
-    }).then(function (p) { _cocoDet = p; return p; });
-  }
-  function loadOwl() {
-    if (_owlDet) return Promise.resolve(_owlDet);
-    return loadTransformers().then(function (m) {
-      return m.pipeline("zero-shot-object-detection", "Xenova/owlvit-base-patch32", { dtype: "q8", device: "wasm" });
-    }).then(function (p) { _owlDet = p; return p; });
-  }
-  function loadSam() {
-    if (_samModel && _samProc) return Promise.resolve(true);
-    return loadTransformers().then(function (m) {
-      return Promise.all([
-        m.SamModel.from_pretrained("Xenova/slimsam-77-uniform", { dtype: "q8", device: "wasm" }),
-        m.AutoProcessor.from_pretrained("Xenova/slimsam-77-uniform")
-      ]);
-    }).then(function (pair) { _samModel = pair[0]; _samProc = pair[1]; return true; });
-  }
-
-  // Free a model's ONNX session so its arena in the shared WASM heap can be
-  // REUSED by the next model instead of growing the heap further (WASM linear
-  // memory never shrinks, so the heap high-water-mark is what the OS sees). On
-  // mobile we dispose the detector before SlimSAM loads, and dispose SlimSAM
-  // after the mask is extracted, so two heavy models never co-reside — that gap
-  // is the difference between fitting under iOS's per-tab ceiling and an OOM.
-  function disposeDetectors() {
-    try { if (_cocoDet && _cocoDet.dispose) _cocoDet.dispose(); } catch (e) {}
-    try { if (_owlDet && _owlDet.dispose) _owlDet.dispose(); } catch (e) {}
-    _cocoDet = null; _owlDet = null;
-  }
-  function disposeSam() {
-    try { if (_samModel && _samModel.dispose) _samModel.dispose(); } catch (e) {}
-    _samModel = null; _samProc = null;
-  }
-
-  // Canvas → transformers RawImage (RGBA, full canvas resolution).
-  function canvasToRawImage(canvas) {
-    var ctx = canvas.getContext("2d");
-    var id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return new _tf.RawImage(new Uint8ClampedArray(id.data), canvas.width, canvas.height, 4);
-  }
-
-  // Return a copy of `canvas` shrunk so its longest side is <= DETECT_MAX (the
-  // original is returned untouched if already small enough). Used ONLY to feed
-  // the heavy vision models a memory-safe frame; detection boxes and the SAM
-  // mask come back in this reduced space and are resampled to the working grid
-  // by resampleMask(), so nothing downstream needs the box rescaled.
-  function downscaleForVision(canvas) {
-    var w = canvas.width, h = canvas.height, m = Math.max(w, h);
-    if (m <= DETECT_MAX) return canvas;
-    var s = DETECT_MAX / m;
-    var c = document.createElement("canvas");
-    c.width = Math.max(1, Math.round(w * s));
-    c.height = Math.max(1, Math.round(h * s));
-    var cx = c.getContext("2d");
-    cx.imageSmoothingEnabled = true;
-    cx.drawImage(canvas, 0, 0, c.width, c.height);
-    return c;
-  }
-
-  // Detect the object's bounding box {xmin,ymin,xmax,ymax} or null. COCO words
-  // use DETR only (no OWL fallback → no surprise 148 MB download); open-vocab
-  // words use OWL-ViT.
-  function detectObject(image, entry) {
-    if (entry.coco) {
-      return loadCoco().then(function (det) {
-        return det(image, { threshold: 0.5 });
-      }).then(function (out) {
-        var hits = out.filter(function (o) { return o.label === entry.coco; })
-                      .sort(function (a, b) { return b.score - a.score; });
-        return hits.length ? hits[0].box : null;
-      });
-    }
-    return loadOwl().then(function (det) {
-      return det(image, [entry.q], { threshold: 0.05, topk: 5 });
-    }).then(function (out) {
-      if (!out.length) return null;
-      return out.sort(function (a, b) { return b.score - a.score; })[0].box;
-    });
-  }
-
-  // SlimSAM: bounding box → binary mask {data:Uint8Array, w, h} (1 = object).
-  // v3 SamProcessor takes an options object. This SlimSAM ONNX export accepts
-  // only input_points/input_labels (it silently ignores input_boxes), so we
-  // prompt it with ONE positive point at the detection-box centre — that single
-  // well-placed point yields a full-object mask (~56% coverage on a centred
-  // subject), which is all this mosaic-grade recolor/remove needs.
-  function segmentBox(image, box) {
-    return loadSam().then(function () {
-      var cx = Math.round((box.xmin + box.xmax) / 2), cy = Math.round((box.ymin + box.ymax) / 2);
-      return _samProc(image, {
-        input_points: [[[cx, cy]]],
-        input_labels: [[1]]
-      });
-    }).then(function (inputs) {
-      return Promise.all([inputs, _samModel(Object.assign({}, inputs))]);
-    }).then(function (pair) {
-      var inputs = pair[0], outputs = pair[1];
-      return Promise.all([
-        inputs, outputs,
-        _samProc.post_process_masks(outputs.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes)
-      ]);
-    }).then(function (triple) {
-      var outputs = triple[1], masks = triple[2];
-      var mt = masks[0], dims = mt.dims;
-      var H = dims[dims.length - 2], W = dims[dims.length - 1];
-      var nMasks = dims[dims.length - 3] || 1;
-      var iou = outputs.iou_scores.data, best = 0;
-      for (var k = 1; k < nMasks; k++) if (iou[k] > iou[best]) best = k;
-      var plane = H * W, off = best * plane, md = mt.data;
-      var out = new Uint8Array(plane);
-      for (var i = 0; i < plane; i++) out[i] = md[off + i] ? 1 : 0;
-      return { mask: out, w: W, h: H };
-    });
-  }
-
-  // Grow a binary mask by `px` pixels (covers the soft object boundary).
-  function dilateMask(mask, w, h, px) {
-    var cur = mask;
-    for (var it = 0; it < px; it++) {
-      var nx = Uint8Array.from(cur);
-      for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-          var p = y * w + x;
-          if (cur[p]) continue;
-          if ((x > 0 && cur[p - 1]) || (x < w - 1 && cur[p + 1]) ||
-              (y > 0 && cur[p - w]) || (y < h - 1 && cur[p + w])) nx[p] = 1;
-        }
-      }
-      cur = nx;
-    }
-    return cur;
-  }
-
-  // Remove: iterative boundary inpaint — repeatedly fill masked pixels from their
-  // already-known neighbours until the hole is closed. Convincing for objects
-  // that don't fill the whole frame.
-  function inpaintMask(ctx, w, h, mask) {
-    var img = ctx.getImageData(0, 0, w, h), d = img.data;
-    var rem = Uint8Array.from(mask), remaining = 0, i;
-    for (i = 0; i < rem.length; i++) if (rem[i]) remaining++;
-    var guard = 0;
-    while (remaining > 0 && guard < 2000) {
-      guard++;
-      var fills = [];
-      for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-          var p = y * w + x;
-          if (!rem[p]) continue;
-          var r = 0, g = 0, b = 0, c = 0, q;
-          if (x > 0 && !rem[p - 1]) { q = (p - 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
-          if (x < w - 1 && !rem[p + 1]) { q = (p + 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
-          if (y > 0 && !rem[p - w]) { q = (p - w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
-          if (y < h - 1 && !rem[p + w]) { q = (p + w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; c++; }
-          if (c) fills.push([p, r / c, g / c, b / c]);
-        }
-      }
-      if (!fills.length) break;
-      for (var f = 0; f < fills.length; f++) {
-        var fp = fills[f][0] * 4;
-        d[fp] = fills[f][1]; d[fp + 1] = fills[f][2]; d[fp + 2] = fills[f][3];
-        rem[fills[f][0]] = 0; remaining--;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
-  }
-
-  // Recolor: masked HSV repaint — force the target hue and keep each pixel's
-  // own brightness (V) so shading/texture survive. Crucially we CLAMP V into a
-  // mid band: the mosaic re-quantises to a fixed BrickLink palette, so a very
-  // dark (shadowed) or blown-out pixel would otherwise snap to black/white and
-  // the recolour looks patchy — e.g. only the lit half of a pair of lips turns
-  // blue. Clamping keeps the whole region reading as the chosen colour while
-  // still preserving some light/shade. Neutral targets (white/black/grey) are
-  // painted flat with no hue tint. Reuses hexToRgb/rgbToHsv/hsvToRgb.
-  function recolorMask(ctx, w, h, mask, hex) {
-    var to = hexToRgb(hex), thsv = rgbToHsv(to.r, to.g, to.b);
-    var neutral = thsv[1] < 0.12; // white / black / grey → no chroma
-    var img = ctx.getImageData(0, 0, w, h), d = img.data;
-    for (var i = 0; i < mask.length; i++) {
-      if (!mask[i]) continue;
-      var q = i * 4, rgb;
-      if (neutral) {
-        rgb = hsvToRgb(0, 0, thsv[2]); // flat grey/white/black, reads cleanly
-      } else {
-        var hsv = rgbToHsv(d[q], d[q + 1], d[q + 2]);
-        var v = Math.min(0.95, Math.max(0.42, hsv[2]));
-        var s = Math.min(1, Math.max(hsv[1], 0.6));
-        rgb = hsvToRgb(thsv[0], s, v);
-      }
-      d[q] = rgb[0]; d[q + 1] = rgb[1]; d[q + 2] = rgb[2];
-    }
-    ctx.putImageData(img, 0, 0);
-  }
-
-  // Nearest-neighbour resample a {mask,w,h} to W×H (the working-canvas grid).
-  function resampleMask(seg, W, H) {
-    if (seg.w === W && seg.h === H) return seg.mask;
-    var mask = new Uint8Array(W * H);
-    for (var y = 0; y < H; y++) {
-      var sy = Math.min(seg.h - 1, (y / H * seg.h) | 0);
-      for (var x = 0; x < W; x++) {
-        var sx = Math.min(seg.w - 1, (x / W * seg.w) | 0);
-        mask[y * W + x] = seg.mask[sy * seg.w + sx];
-      }
-    }
-    return mask;
-  }
-
-  // Bake a ready mask (any resolution) as a remove/recolor edit into a fresh
-  // object layer, then recompute() (which re-applies the other active ops and
-  // re-renders, owning the busy lock until it finishes). Shared by BOTH mask
-  // sources — the COCO/OWL object detector and FaceLandmarker — so "how an edit
-  // is applied" lives in exactly one place.
-  function bakeRegionEdit(seg, action, colorObj, dilatePx, onDone) {
-    var base = workBase();
-    var W = base.width, H = base.height;
-    var mask = resampleMask(seg, W, H);
-    if (dilatePx) mask = dilateMask(mask, W, H, dilatePx);
-    var layer = cloneCanvas(base);
-    var lctx = layer.getContext("2d");
-    if (action === "remove") inpaintMask(lctx, W, H, mask);
-    else recolorMask(lctx, W, H, mask, colorObj.hex);
-    state.objectLayer = layer;
-    recompute(onDone);
-  }
-
-  // ── Server-side object segmentation (replaces the on-device OWL-ViT+SlimSAM) ──
-  // The old pipeline ran two heavy transformers.js WASM models in the browser.
-  // On mobile Safari that OOM-killed the whole tab ("Diese Seite konnte nicht
-  // geladen werden") — a per-tab memory ceiling, stricter inside an iframe, that
-  // even an 8 GB iPhone hit, and a crash NOT catchable in JS. So detect+segment
-  // now runs SERVER-SIDE via the Gemini proxy: we upload a downscaled JPEG + the
-  // object name, the proxy returns box_2d + a base64 PNG mask, and we apply that
-  // mask locally exactly as before (recolor/inpaint). No heavy model on ANY
-  // device → no crash, identical on iPhone / Android / desktop, and the ~50–100 MB
-  // of transformers.js + ONNX weights are never downloaded (loadTransformers and
-  // friends above are now dead code, kept only to keep this diff small).
-  var SEG_ENDPOINT   = (window.BK_AI_SEG_ENDPOINT || "/wp-json/bk-ai/v1/segment");
-  var SEG_UPLOAD_MAX = 768;    // longest side of the JPEG we send to the proxy
-  var SEG_TIMEOUT_MS = 60000;  // headroom over the proxy's own ~55 s Gemini wait
+  // ── Server-side AI image editing (Gemini "Nano Banana") ───────────────────
+  // The user's free-text wish ("färb den Tiger blau", "Hintergrund Strand",
+  // "optimiere das") is turned into an ENGLISH instruction here and sent WITH the
+  // working photo to the proxy (/wp-json/bk-ai/v1/edit), which calls Google's
+  // gemini-2.5-flash-image. It returns a FULL edited image preserving the rest of
+  // the photo; we draw that into a fresh object layer (so Reset still restores the
+  // true original) and re-run the mosaic.
+  //
+  // This replaces BOTH dead paths it used to live next to: the in-browser
+  // transformers.js OWL-ViT/SlimSAM object pipeline (OOM-killed mobile Safari) and
+  // the /segment mask path (Gemini returns no usable PNG mask). Running the edit
+  // fully on Google's side means it works identically on iPhone / Android / desktop
+  // and downloads no WASM (the old transformers.js pipeline has been removed).
+  //
+  // Palette-awareness: every instruction carries paletteGuidance() (name #hex of
+  // the active brick palette) so the edited image already uses buildable colours;
+  // recolours additionally pin the EXACT brick hex (brickHex()) of the wished
+  // colour so the mosaic quantizes it cleanly instead of muddy.
+  var EDIT_ENDPOINT   = (window.BK_AI_EDIT_ENDPOINT || "/wp-json/bk-ai/v1/edit");
+  var EDIT_UPLOAD_MAX = 1024;   // longest side of the JPEG we send to the proxy
+  var EDIT_TIMEOUT_MS = 65000;  // headroom over the proxy's own ~60 s Gemini wait
 
   // Shrink `canvas` so its longest side ≤ maxDim, return { url:jpegDataURL, w, h }.
-  // A small upload keeps the round-trip fast; Gemini tiles the image internally
-  // so more pixels wouldn't sharpen the mask (which we resample onto a coarse
-  // stud grid anyway).
+  // A capped upload keeps the round-trip fast; the image model tiles internally so
+  // more pixels don't improve the edit (and the mosaic re-quantizes anyway).
   function canvasToUploadJpeg(canvas, maxDim) {
     var w = canvas.width, h = canvas.height, m = Math.max(w, h), c = canvas;
     if (m > maxDim) {
@@ -1242,205 +1025,103 @@
     return { url: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height };
   }
 
-  // Decode the proxy's base64 PNG mask (sized to box_2d) into a full-frame binary
-  // mask { mask:Uint8Array(0/1), w, h } at the uploaded frame's resolution. `box`
-  // is [y0,x0,y1,x1] normalized 0–1000. Gemini's mask is a probability map →
-  // threshold at 127. Returns a Promise.
-  function decodeServerMask(maskB64, box, frameW, frameH) {
+  // Load a data-URL image onto a fresh canvas the working size of `targetW×targetH`
+  // (the edited image may come back at a slightly different aspect/size; we letterbox-
+  // free scale to the working base so it slots straight into the pipeline). Resolves
+  // with the canvas or rejects on a decode error.
+  function dataUrlToCanvas(dataUrl, targetW, targetH) {
     return new Promise(function (resolve, reject) {
-      // Never trust a network payload: the proxy already validates box_2d as four
-      // ints and the mask as a real PNG, but a malformed value must fail cleanly
-      // here (→ "unavailable") rather than throw deep inside the draw loop.
-      if (!box || box.length !== 4 ||
-          !isFinite(box[0]) || !isFinite(box[1]) || !isFinite(box[2]) || !isFinite(box[3])) {
-        reject(new Error("mask_decode")); return;
-      }
-      if (typeof maskB64 !== "string" || maskB64.length < 8) {
-        reject(new Error("mask_decode")); return;
-      }
+      if (typeof dataUrl !== "string" || dataUrl.length < 16) { reject(new Error("decode")); return; }
       var img = new Image();
       img.onload = function () {
         try {
-          var clamp = function (v, hi) { return Math.max(0, Math.min(hi, Math.round(v))); };
-          var y0 = clamp(box[0] / 1000 * frameH, frameH);
-          var x0 = clamp(box[1] / 1000 * frameW, frameW);
-          var y1 = clamp(box[2] / 1000 * frameH, frameH);
-          var x1 = clamp(box[3] / 1000 * frameW, frameW);
-          var bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
-          // Draw the PNG mask scaled to the box so it aligns 1:1 with that region.
-          var mc = document.createElement("canvas");
-          mc.width = bw; mc.height = bh;
-          var mctx = mc.getContext("2d");
-          mctx.drawImage(img, 0, 0, bw, bh);
-          var md = mctx.getImageData(0, 0, bw, bh).data;
-          var full = new Uint8Array(frameW * frameH);
-          var setCount = 0;
-          for (var yy = 0; yy < bh; yy++) {
-            for (var xx = 0; xx < bw; xx++) {
-              var sidx = (yy * bw + xx) * 4;
-              // Grayscale probability → luminance (R). If the PNG turns out to be
-              // alpha-encoded (R=0, A=prob) instead, fall back to the alpha byte.
-              var prob = md[sidx + 3] === 255 ? md[sidx] : md[sidx + 3];
-              if (prob >= 127) { full[(y0 + yy) * frameW + (x0 + xx)] = 1; setCount++; }
-            }
-          }
-          // A real PNG that thresholds to (almost) nothing means the model didn't
-          // actually localize the object. Report "not found" instead of baking an
-          // empty edit and falsely telling the user it worked.
-          if (setCount < 8) {
-            var ne = new Error("not_found"); ne.reason = "not_found"; reject(ne); return;
-          }
-          resolve({ mask: full, w: frameW, h: frameH });
+          var c = document.createElement("canvas");
+          c.width = targetW; c.height = targetH;
+          var cx = c.getContext("2d");
+          cx.imageSmoothingEnabled = true;
+          cx.imageSmoothingQuality = "high";
+          cx.drawImage(img, 0, 0, targetW, targetH);
+          resolve(c);
         } catch (e) { reject(e); }
       };
-      img.onerror = function () { reject(new Error("mask_decode")); };
-      img.src = "data:image/png;base64," + maskB64;
+      img.onerror = function () { reject(new Error("decode")); };
+      img.src = dataUrl;
     });
   }
 
-  // POST photo + object name to the proxy → resolve { mask,w,h } ready for
-  // bakeRegionEdit, or reject with an Error whose .reason drives the chat copy:
-  //   "not_found"    → object isn't in the photo
-  //   "rate_limited" → too many requests / quota, try later
-  //   "unavailable"  → no key / network / upstream / decode error
-  function segmentViaServer(base, target) {
-    function mkErr(reason) { var e = new Error(reason); e.reason = reason; return e; }
-    // Build the JPEG upload defensively: toDataURL can throw on an oversized or
-    // tainted canvas. A synchronous throw here would escape the promise chain and
-    // strand the busy spinner, so turn it into a normal rejection instead.
-    var up;
-    try {
-      up = canvasToUploadJpeg(base, SEG_UPLOAD_MAX);
-    } catch (e) {
-      return Promise.reject(mkErr("unavailable"));
-    }
-    var ctrl  = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, SEG_TIMEOUT_MS) : null;
-    function done() { if (timer) { clearTimeout(timer); timer = null; } }
-    return fetch(SEG_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: up.url, target: target }),
-      signal: ctrl ? ctrl.signal : undefined
-    }).then(function (r) {
-      done();
-      return r.json().catch(function () { return null; });
-    }).then(function (data) {
-      if (!data) throw mkErr("unavailable");
-      if (data.ok && data.mask && data.box) {
-        return decodeServerMask(data.mask, data.box, up.w, up.h);
-      }
-      var reason = data.reason || "unavailable";
-      if (reason === "not_found") throw mkErr("not_found");
-      if (reason === "rate_limited" || reason === "quota") throw mkErr("rate_limited");
-      throw mkErr("unavailable");
-    }).catch(function (err) {
-      done();
-      if (err && err.reason) throw err;   // our mapped reason → preserve it
-      throw mkErr("unavailable");         // network / abort / decode → generic
-    });
-  }
-
-  // NOTE: CURRENTLY UNUSED (minimal build). Arbitrary object-by-name editing is
-  // disabled: the Gemini /segment API returns no usable PNG mask (only internal
-  // <seg> vision tokens), so this path could never succeed. The routing now
-  // sends arbitrary objects to an honest "manual" message and face parts to
-  // runFacePartEdit instead. Kept (with segmentViaServer/decodeServerMask) for a
-  // future tap-to-select path; the photo is never uploaded while this is unused.
-  //
-  // Orchestrator: segment server-side → bake the edit into state.objectLayer, then
-  // recompute() (which re-applies any other active ops and re-renders the mosaic).
-  // objMatch = { entry, key }; action = "remove" | "recolor"; colorObj for recolor.
-  function runObjectEdit(objMatch, action, colorObj) {
+  // editViaServer(instruction, opts) — THE entry point for every "smart" chat edit.
+  //   instruction : ENGLISH edit text built by the caller (recolor/remove/optimize/…)
+  //   opts.doneMsg: bot message on success (already-localized German)
+  //   opts.errMsg : bot message on failure (defaults to a generic German note)
+  // Pipeline: downscale the current working base → POST {image, instruction, palette}
+  // to /edit → draw the returned image into state.objectLayer (the pristine layer
+  // recompute() builds on, so other ops stack on top and Reset still restores the
+  // true original) → recompute() (re-applies active ops + re-renders the mosaic).
+  // Owns the busy overlay throughout; on timeout/error releases it and apologises.
+  function editViaServer(instruction, opts) {
+    opts = opts || {};
     if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
-    var label  = objMatch.key;
-    var target = objMatch.entry.q || objMatch.key;   // English query Gemini prefers
-    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
+    var base = workBase();
+    setBusyMsg(tr("aiEditBusyTitle"), tr("aiEditBusySub"));
     setBusy(true);
-    addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
+    addMsg(tr("aiEditWorking"), "bot");
 
-    // Defer one frame so the busy overlay paints before we build the JPEG upload.
+    // Defer a frame so the busy overlay paints before the (sync) JPEG encode.
     requestAnimationFrame(function () {
+      var up;
       try {
-        var base = workBase();
-        segmentViaServer(base, target)
-          .then(function (seg) {
-            // Resample → dilate 2px → bake → re-render, all in bakeRegionEdit
-            // (which owns the busy lock from here and clears it on finish).
-            clearStatus();
-            bakeRegionEdit(seg, action, colorObj, 2, function () {
-              if (action === "remove") {
-                addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
-              } else {
-                addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
-              }
-            });
-          })
-          .catch(function (err) {
-            clearStatus();
-            setBusy(false);
-            var reason = (err && err.reason) || "unavailable";
-            if (reason === "not_found") {
-              addMsg(tr("aiChatObjectNotFound").replace("{obj}", label), "bot");
-            } else {
-              // rate_limited and unavailable both read as "try again later".
-              addMsg(tr("aiChatObjectUnavailable"), "bot");
-            }
-          });
+        up = canvasToUploadJpeg(base, EDIT_UPLOAD_MAX);
       } catch (e) {
-        // Last-resort guard: if anything above throws synchronously (e.g.
-        // workBase), still release the busy lock so the chat never freezes.
-        clearStatus();
         setBusy(false);
-        addMsg(tr("aiChatObjectUnavailable"), "bot");
+        addMsg(opts.errMsg || tr("aiEditUnavailable"), "bot");
+        return;
       }
-    });
-  }
+      var W = base.width, H = base.height;
+      var ctrl  = ("AbortController" in window) ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, EDIT_TIMEOUT_MS) : null;
+      function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
 
-  // Find the OBJ_SYN entry for a face part, so a no-face fallback can hand off
-  // to the generic OWL-ViT detector (e.g. "eye"/"nose" on an animal).
-  function fallbackMatch(part, label) {
-    for (var i = 0; i < OBJ_SYN.length; i++) {
-      if (OBJ_SYN[i].face === part) return { entry: OBJ_SYN[i], key: label };
-    }
-    return { entry: { coco: null, q: part }, key: label };
-  }
-
-  // Face-part edit (eyes / nose / lips / eyebrows): builds a PRECISE mask from
-  // MediaPipe FaceLandmarker — a light on-device model that's iOS-safe. If no
-  // human face is present (e.g. an animal photo), it says so honestly instead
-  // of pretending (arbitrary-object segmentation is intentionally not wired up).
-  function runFacePartEdit(part, label, action, colorObj) {
-    if (!ensureBase()) { addMsg(tr("aiChatNoImage"), "bot"); return; }
-    if (!window.bkRegion) { addMsg(tr("aiChatFaceUnavailable"), "bot"); return; }
-    setBusyMsg(tr("aiBusyThink").replace("{obj}", label), tr("aiBusyThinkSub"));
-    setBusy(true);
-    setStatus(tr("aiChatObjectModelLoading"));
-    addMsg(tr("aiChatObjectSearching").replace("{obj}", label), "bot");
-    // Defer a frame so the loading overlay paints before the (possibly cached)
-    // model inference blocks the main thread — same reasoning as runObjectEdit.
-    requestAnimationFrame(function () {
-      var base = workBase();
-      window.bkRegion.facePartMask(base, part).then(function (seg) {
-        if (seg && seg.coverage > 0.0005) {
-          clearStatus();
-          bakeRegionEdit(seg, action, colorObj, 2, function () {
-            if (action === "remove") addMsg(tr("aiChatDoneObjectRemove").replace("{obj}", label), "bot");
-            else addMsg(tr("aiChatDoneObjectRecolor").replace("{obj}", label).replace("{color}", colorObj.name), "bot");
-          });
-        } else {
-          // No human face found — be honest (face parts need a clear portrait).
-          clearStatus();
+      fetch(EDIT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: up.url, instruction: instruction, palette: paletteGuidance() }),
+        signal: ctrl ? ctrl.signal : undefined
+      }).then(function (r) {
+        clearTimer();
+        return r.json().catch(function () { return null; });
+      }).then(function (data) {
+        if (!data || data.ok !== true || !data.image) {
+          var reason = (data && data.reason) || "unavailable";
           setBusy(false);
-          addMsg(tr("aiChatFaceNotFound"), "bot");
+          if (reason === "rate_limited" || reason === "quota") addMsg(tr("aiEditRateLimited"), "bot");
+          else if (reason === "blocked") addMsg(tr("aiEditBlocked"), "bot");
+          else addMsg(opts.errMsg || tr("aiEditUnavailable"), "bot");
+          return;
         }
+        // Got an edited image: draw it into a fresh object layer at the working
+        // size, then recompute() (which owns the busy lock from here + clears it).
+        dataUrlToCanvas(data.image, W, H).then(function (layer) {
+          state.objectLayer = layer;
+          recompute(function () {
+            addMsg(opts.doneMsg || tr("aiEditDone"), "bot");
+          });
+        }).catch(function () {
+          setBusy(false);
+          addMsg(opts.errMsg || tr("aiEditUnavailable"), "bot");
+        });
       }).catch(function () {
-        clearStatus();
+        clearTimer();
         setBusy(false);
-        addMsg(tr("aiChatFaceUnavailable"), "bot");
+        addMsg(opts.errMsg || tr("aiEditUnavailable"), "bot");
       });
     });
   }
+
+  // NOTE: the old on-device object/face pipeline (detect → segment → mask edit)
+  // and the /segment server-mask path are GONE. All object / face-part / recolor /
+  // background-vs-object edits now go through editViaServer() above (Gemini image
+  // edit). The only ML still on-device is window.bkSeg person-segmentation for the
+  // "remove background" flood-fill fallback (ensureMask / removeBackgroundMask).
 
   // ---- mini-chat (intent-scoped, image-only) ---------------------------
 
@@ -1560,46 +1241,149 @@
     return o ? o.key : null;
   }
 
-  // Turn a structured intent into a canonical German command and run it through
-  // routeLocal (the proven executor + replies). Conversational/ambiguous intents
-  // are answered directly with the model's German reply. Missing/invalid params
-  // fall back to routeLocal(originalText) so the regex parser gets a chance.
+  // German palette name → English word for the Gemini edit instruction (Gemini
+  // follows English colour names most reliably). Brightness/shade come from the
+  // pinned brick hex; this is just the human-readable colour word in the prose.
+  var COLOR_EN = {
+    "weiß": "white", "schwarz": "black", "grau": "gray", "blau": "blue",
+    "hellblau": "light blue", "rot": "red", "grün": "green", "gelb": "yellow",
+    "orange": "orange", "rosa": "pink", "lila": "purple", "türkis": "turquoise",
+    "braun": "brown"
+  };
+  function colorEnglish(colorObj) {
+    if (!colorObj) return "";
+    return COLOR_EN[colorObj.name] || colorObj.name;
+  }
+  // German object key → English noun for the instruction. Uses the OBJ_SYN `q`
+  // (the English query that block already carries) when present, else the key.
+  function objEnglish(germanKey) {
+    var o = findObject(String(germanKey).toLowerCase());
+    if (o && o.entry && o.entry.q) return o.entry.q;
+    return germanKey;
+  }
+  // Resolve a chat colour OBJECT from a canonical German name (after colorWord()).
+  function colorObjByName(name) {
+    for (var i = 0; i < COLORS.length; i++) if (COLORS[i].name === name) return COLORS[i];
+    return null;
+  }
+
+  // ── English instruction builders for editViaServer ────────────────────────
+  // Every recolor pins the EXACT brick-palette hex (brickHex) and tells Gemini to
+  // keep the rest of the image identical, so the result quantizes cleanly. The
+  // palette name+#hex list is appended server-side AND via paletteGuidance().
+  function instrObjectRecolor(germanKey, colorObj) {
+    var en = objEnglish(germanKey), hex = brickHex(colorObj);
+    return "Recolor the " + en + " in this photo to this exact " + colorEnglish(colorObj) +
+           " (#" + hex.replace("#", "") + ", a colour from our LEGO brick palette). " +
+           "Keep everything else exactly the same — same composition, background, pose and lighting.";
+  }
+  function instrObjectRemove(germanKey) {
+    var en = objEnglish(germanKey);
+    return "Remove the " + en + " from this photo and realistically fill the area behind it so it " +
+           "looks like the " + en + " was never there. Keep everything else exactly the same.";
+  }
+  function instrRecolorBackground(colorObj) {
+    var hex = brickHex(colorObj);
+    return "Replace ONLY the background of this photo with a solid " + colorEnglish(colorObj) +
+           " (#" + hex.replace("#", "") + ", a colour from our LEGO brick palette). " +
+           "Keep the main subject in the foreground exactly the same and unchanged.";
+  }
+  function instrRemoveBackground() {
+    return "Remove the background of this photo, keeping ONLY the main subject in the foreground. " +
+           "Replace the background with a clean, solid plain white. Keep the subject exactly the same.";
+  }
+  function instrSelectiveRecolor(fromObj, toObj) {
+    var hex = brickHex(toObj);
+    return "Change every " + colorEnglish(fromObj) + " area in this photo to this exact " +
+           colorEnglish(toObj) + " (#" + hex.replace("#", "") + ", a colour from our LEGO brick " +
+           "palette), keeping the original shading and texture. Leave all other colours unchanged.";
+  }
+  function instrColorIntensity(colorObj, more) {
+    var hex = brickHex(colorObj);
+    return (more ? "Make the " + colorEnglish(colorObj) + " areas in this photo noticeably more vivid and saturated"
+                 : "Make the " + colorEnglish(colorObj) + " areas in this photo more muted and desaturated") +
+           ", staying close to this brick-palette shade (#" + hex.replace("#", "") + "). " +
+           "Keep everything else exactly the same.";
+  }
+  function instrOptimize() {
+    return "Enhance this photo so it makes a clean, vivid LEGO mosaic: improve white balance, " +
+           "contrast and colour vibrance, keep skin tones natural, and keep the composition and " +
+           "every subject exactly the same. Do not add or remove anything.";
+  }
+
+  // Turn a structured intent into either an in-browser op (free/instant ops via
+  // routeLocal) or a server-side Gemini image edit (editViaServer). The "smart"
+  // edits — recolor an object, remove an object, recolor/remove the background,
+  // swap a colour, change colour intensity, optimize, and face parts — go to the
+  // image model. brighter/darker/grayscale stay in-browser (free + instant);
+  // reset/help/clarify/offtopic are conversational. Missing/invalid params fall
+  // back to routeLocal(originalText) so the offline regex parser gets a chance.
   function dispatchIntent(intent, originalText) {
     switch (intent.action) {
-      case "remove_background": routeLocal("hintergrund entfernen"); return;
+      // Free + instant in-browser ops.
       case "grayscale":         routeLocal("graustufen"); return;
-      case "optimize":          routeLocal("optimieren"); return;
       case "brighter":          routeLocal("heller"); return;
       case "darker":            routeLocal("dunkler"); return;
       case "reset":             routeLocal("zuruecksetzen"); return;
+      // Conversational.
       case "help":              addMsg(tr("aiChatGreeting"), "bot"); return;
       case "clarify":           addMsg(intent.reply_de || tr("aiChatGreeting"), "bot"); return;
       case "offtopic":          addMsg(intent.reply_de || tr("aiChatOffTopic"), "bot"); return;
+
+      // Smart edits → Gemini image model (editViaServer).
+      case "optimize":
+        editViaServer(instrOptimize(), { doneMsg: tr("aiChatDoneOptimize") });
+        return;
+
+      case "remove_background":
+        editViaServer(instrRemoveBackground(), { doneMsg: tr("aiChatDoneBg") });
+        return;
+
       case "recolor_background": {
         var bgc = colorWord(intent.color || intent.to_color);
-        if (!bgc) { routeLocal(originalText); return; }
-        routeLocal("hintergrund " + bgc); return;
+        var bgObj = colorObjByName(bgc);
+        if (!bgObj) { routeLocal(originalText); return; }
+        editViaServer(instrRecolorBackground(bgObj),
+          { doneMsg: tr("aiChatDoneBgColor").replace("{color}", bgObj.name) });
+        return;
       }
+
       case "selective_recolor": {
         var f = colorWord(intent.from_color), t = colorWord(intent.to_color);
-        if (!f || !t) { routeLocal(originalText); return; }
-        routeLocal("aus " + f + " mach " + t); return;
+        var fObj = colorObjByName(f), tObj = colorObjByName(t);
+        if (!fObj || !tObj || fObj === tObj) { routeLocal(originalText); return; }
+        editViaServer(instrSelectiveRecolor(fObj, tObj),
+          { doneMsg: tr("aiChatDoneRecolor").replace("{from}", fObj.name).replace("{to}", tObj.name) });
+        return;
       }
+
       case "color_intensity": {
         var ic = colorWord(intent.color);
-        if (!ic) { routeLocal(originalText); return; }
-        routeLocal((intent.direction === "less" ? "weniger " : "mehr ") + ic); return;
+        var icObj = colorObjByName(ic);
+        if (!icObj) { routeLocal(originalText); return; }
+        var more = intent.direction !== "less";
+        editViaServer(instrColorIntensity(icObj, more),
+          { doneMsg: tr(more ? "aiChatDoneMore" : "aiChatDoneLess").replace("{color}", icObj.name) });
+        return;
       }
+
       case "object_recolor": {
         var ot = objWord(intent.target), oc = colorWord(intent.color || intent.to_color);
-        if (!ot || !oc) { routeLocal(originalText); return; }
-        routeLocal("faerbe " + ot + " " + oc); return;
+        var ocObj = colorObjByName(oc);
+        if (!ot || !ocObj) { routeLocal(originalText); return; }
+        editViaServer(instrObjectRecolor(ot, ocObj),
+          { doneMsg: tr("aiChatDoneObjectRecolor").replace("{obj}", ot).replace("{color}", ocObj.name) });
+        return;
       }
+
       case "object_remove": {
         var rt = objWord(intent.target);
         if (!rt) { routeLocal(originalText); return; }
-        routeLocal("entferne " + rt); return;
+        editViaServer(instrObjectRemove(rt),
+          { doneMsg: tr("aiChatDoneObjectRemove").replace("{obj}", rt) });
+        return;
       }
+
       default: routeLocal(originalText); return;
     }
   }
@@ -1690,16 +1474,12 @@
     var colorVerb = /(mach|mache|f(ä|ae)rb|einf(ä|ae)rb|color|colou?r)/.test(text);
 
     // 2a) Object-targeted edit. If the user names a single object ("der Laptop",
-    // "die Haare") and it's NOT a background command, locate that object (DETR /
-    // OWL-ViT) and either remove it or recolor it. This runs BEFORE the whole-image
-    // colour ops so "färbe den Hund blau" hits the object, not the background.
+    // "die Haare", "den Tiger") and it's NOT a background command, recolor or
+    // remove THAT object via the Gemini image edit (editViaServer). This runs
+    // BEFORE the whole-image colour ops so "färbe den Hund blau" hits the object,
+    // not the background. Works for any named object now (no on-device model).
     var objMatch = findObject(text);
     if (objMatch && !bgWord) {
-      // Named arbitrary objects (tiger, car, dog …) can't be auto-segmented
-      // reliably — Gemini's API returns no usable mask and a heavy in-browser
-      // model crashes iOS. Be honest instead of failing with a misleading "not
-      // found". Face parts (eyes/eyebrows/lips/nose) DO work on-device below.
-      if (!objMatch.entry.face) { addMsg(tr("aiChatObjectManual"), "bot"); return; }
       var removeWord = /(entfern|wegmach|\bweg\b|\braus\b|l(ö|oe)sch|\bremove\b|\bdelete\b)/.test(text);
       var objColors = detectColorsOrdered(text);
       var recolorWord = /(umf(ä|ae)rb|f(ä|ae)rb|einf(ä|ae)rb|austausch|wechsel|colou?r)/.test(text);
@@ -1708,14 +1488,14 @@
         if (!need()) return;
         var objColor = objColors.length ? objColors[objColors.length - 1].col : detectColor(text);
         if (!objColor) { addMsg(tr("aiChatObjectNeedColor").replace("{obj}", objMatch.key), "bot"); return; }
-        // Only face parts (eyes/nose/lips/eyebrows) reach here → precise
-        // on-device FaceLandmarker mask (arbitrary objects returned above).
-        runFacePartEdit(objMatch.entry.face, objMatch.key, "recolor", objColor);
+        editViaServer(instrObjectRecolor(objMatch.key, objColor),
+          { doneMsg: tr("aiChatDoneObjectRecolor").replace("{obj}", objMatch.key).replace("{color}", objColor.name) });
         return;
       }
       if (removeWord) {
         if (!need()) return;
-        runFacePartEdit(objMatch.entry.face, objMatch.key, "remove", null);
+        editViaServer(instrObjectRemove(objMatch.key),
+          { doneMsg: tr("aiChatDoneObjectRemove").replace("{obj}", objMatch.key) });
         return;
       }
       // Object named but no clear action → ask what to do with it.
@@ -1861,21 +1641,14 @@
     if (els.optimize) els.optimize.addEventListener("click", function () {
       if (state.busy) return;
       if (!ensureBase()) return;
-      state.optimized = !state.optimized;
-      recompute();
+      addMsg("Bild optimieren", "user");
+      editViaServer(instrOptimize(), { doneMsg: tr("aiChatDoneOptimize") });
     });
     if (els.bg) els.bg.addEventListener("click", function () {
       if (state.busy) return;
       if (!ensureBase()) return;
-      state.bgRemoved = !state.bgRemoved;
-      if (state.bgRemoved) {
-        if (!state.bgColor) state.bgColor = "#ffffff";
-        showSwatches();
-        ensureMask(function () { recompute(); }); // ML mask first, then render
-      } else {
-        hideSwatches();
-        recompute();
-      }
+      addMsg("Hintergrund entfernen", "user");
+      editViaServer(instrRemoveBackground(), { doneMsg: tr("aiChatDoneBg") });
     });
     if (els.reset) els.reset.addEventListener("click", function () {
       if (state.busy) return;
@@ -1903,11 +1676,10 @@
     if (backBtn) backBtn.addEventListener("click", function () { resetForNewImage(); });
 
     // Last line of defence: if ANYTHING in a heavy op throws asynchronously (a
-    // rejected model promise, a WASM error, etc.) it would otherwise surface as
-    // an uncaught error and leave the panel stuck behind the busy overlay. Catch
-    // it globally, unlock the UI and tell the user — only while WE are busy, so
-    // we never swallow unrelated page errors. (A true out-of-memory tab kill is
-    // not catchable in JS; the DETECT_MAX downscale above is what prevents that.)
+    // rejected fetch, a decode error, etc.) it would otherwise surface as an
+    // uncaught error and leave the panel stuck behind the busy overlay. Catch it
+    // globally, unlock the UI and tell the user — only while WE are busy, so we
+    // never swallow unrelated page errors.
     window.addEventListener("unhandledrejection", function () {
       if (state.busy) { recoverUI(); addMsg(tr("aiChatError"), "bot"); }
     });
