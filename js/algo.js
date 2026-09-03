@@ -1059,21 +1059,22 @@ function getSubBlockFromPlate(plateArray, plateWidth, blockCol, blockRow, blockW
     return result;
 }
 
-function drawStudCountForContext(
-    studMap,
-    availableStudHexList,
-    scalingFactor,
-    ctx,
-    horizontalOffset,
-    verticalOffset,
-    pixelType,
-    studToNumberOverride
-) {
-    const isVariable = ("" + pixelType).match("^variable.*$");
-
-    // Use a minimum font size so the legend stays readable at high resolutions
-    // (e.g. 288x288 mosaics where scalingFactor is small). The legend's geometry
-    // is then driven by `effectiveScale`, decoupling it from the picture grid.
+/**
+ * Geometry of the colour legend box, in source-canvas pixels.
+ *
+ * Extracted from drawStudCountForContext so that callers can RESERVE the right
+ * amount of horizontal space before drawing. generateInstructionPage used to
+ * hard-code the legend column as 0.5 x pictureWidth; because the legend clamps
+ * its font to MIN_LEGEND_FONT, its width stops shrinking with scalingFactor and
+ * at scalingFactor 40 the box came out 354.1 px wide against a 320 px slot —
+ * so it overlapped the stud grid on every plate that used the longest colour
+ * name ("Leuchtend Hellorange", 216.3 px). Measured 2026-08-28.
+ *
+ * Pass the FULL palette (not just the colours on one page) when reserving
+ * space, so every page reserves the same width and the PDF scale stays
+ * identical from page to page.
+ */
+function bkLegendMetrics(ctx, availableStudHexList, scalingFactor, studMap, isVariable) {
     const MIN_LEGEND_FONT = 26;
     const countFontSize = Math.max(scalingFactor / 2, MIN_LEGEND_FONT);
     const nameFontSize = Math.max(scalingFactor / 2.5, MIN_LEGEND_FONT * 0.85);
@@ -1083,7 +1084,7 @@ function drawStudCountForContext(
     // Measure widest row text so long names like "Leuchtend Hellorange" never clip.
     let maxRowTextWidth = 0;
     availableStudHexList.forEach((pixelHex) => {
-        const countText = isVariable ? "" : `X ${studMap[pixelHex] || 0}  `;
+        const countText = isVariable ? "" : `X ${(studMap && studMap[pixelHex]) || 0}  `;
         const colorText = translateColor(HEX_TO_COLOR_NAME[pixelHex]) || pixelHex;
         ctx.font = `${countFontSize}px Arial`;
         const countW = ctx.measureText(countText).width;
@@ -1110,6 +1111,36 @@ function drawStudCountForContext(
     const contentWidth = radius * 2 + swatchToTextGap + maxRowTextWidth;
     const innerWidth = Math.max(contentWidth, headerW);
     const boxWidth = leftPadding + innerWidth + rightPadding;
+
+    return {
+        MIN_LEGEND_FONT, countFontSize, nameFontSize, effectiveScale, radius,
+        maxRowTextWidth, headerFontSize, headerText, headerW,
+        leftPadding, swatchToTextGap, rightPadding, rowHeight, headerHeight,
+        topPadding, bottomPadding, contentWidth, innerWidth, boxWidth,
+    };
+}
+
+function drawStudCountForContext(
+    studMap,
+    availableStudHexList,
+    scalingFactor,
+    ctx,
+    horizontalOffset,
+    verticalOffset,
+    pixelType,
+    studToNumberOverride
+) {
+    const isVariable = ("" + pixelType).match("^variable.*$");
+
+    // Use a minimum font size so the legend stays readable at high resolutions
+    // (e.g. 288x288 mosaics where scalingFactor is small). The legend's geometry
+    // is then driven by `effectiveScale`, decoupling it from the picture grid.
+    const {
+        MIN_LEGEND_FONT, countFontSize, nameFontSize, effectiveScale, radius,
+        maxRowTextWidth, headerFontSize, headerText, headerW,
+        leftPadding, swatchToTextGap, rightPadding, rowHeight, headerHeight,
+        topPadding, bottomPadding, contentWidth, innerWidth, boxWidth,
+    } = bkLegendMetrics(ctx, availableStudHexList, scalingFactor, studMap, isVariable);
     const boxHeight = topPadding + rowHeight * availableStudHexList.length + bottomPadding;
 
     const boxLeft = horizontalOffset - leftPadding;
@@ -1251,24 +1282,23 @@ function generateInstructionTitlePage(
     // Plate grid sizing: each cell is at least 70px so it stays readable on
     // high-resolution mosaics (small scalingFactor would otherwise make the
     // grid tiny). Cap individual cells so a 4x4 grid doesn't dominate the page.
-    const legendSquareSide = Math.max(Math.min(scalingFactor * 1.5, 110), 70);
-    const legendGridWidth = legendSquareSide * platesPerRow;
-    const legendGridHeight = legendSquareSide * platesPerCol;
+    let legendSquareSide = Math.max(Math.min(scalingFactor * 1.5, 110), 70);
+    let legendGridWidth = legendSquareSide * platesPerRow;
+    let legendGridHeight = legendSquareSide * platesPerCol;
     const gridHeaderFontSize = Math.max(scalingFactor / 2.2, 22);
     const gridHeaderHeight = gridHeaderFontSize * 1.5;
     
-    // Estimate legend height up-front so the canvas reserves enough room for it.
-    // This mirrors the maths in drawStudCountForContext (rowHeight + paddings).
-    const MIN_LEGEND_FONT_LOCAL = 26;
-    const legendCountFontLocal = Math.max(scalingFactor / 2, MIN_LEGEND_FONT_LOCAL);
-    const legendEffectiveScale = Math.max(scalingFactor, MIN_LEGEND_FONT_LOCAL * 2);
-    const legendRowHeight = legendEffectiveScale * 1.3;
-    const legendHeaderHeight = legendCountFontLocal * 1.05 * 1.8;
+    // Measure the legend up-front: the canvas must reserve room for it, and the
+    // plate-grid card needs to know how much width the left column will eat.
+    // Uses the same helper the legend itself uses, so the two cannot drift.
+    const titleLegend = bkLegendMetrics(
+        ctx, availableStudHexList, scalingFactor, studMap, ("" + pixelType).match("^variable.*$")
+    );
     const legendEstHeight =
-        legendHeaderHeight +
-        legendEffectiveScale * 0.4 +
-        legendRowHeight * availableStudHexList.length +
-        legendEffectiveScale * 0.6;
+        titleLegend.headerFontSize * 1.8 +
+        titleLegend.effectiveScale * 0.4 +
+        titleLegend.effectiveScale * 1.3 * availableStudHexList.length +
+        titleLegend.effectiveScale * 0.6;
 
     // Logo block. Sits as a banner above the colour legend (left column),
     // stretched to match the legend's full width. Height is derived from the
@@ -1311,16 +1341,78 @@ function generateInstructionTitlePage(
     }
 
     const gridDrawn = numPlates > 1;
-    const gridCardInnerHeight = gridDrawn ? gridHeaderHeight + legendGridHeight : 0;
+    let gridCardInnerHeight = gridDrawn ? gridHeaderHeight + legendGridHeight : 0;
     const gridCardPadV = metaFontSize * 0.6;
     const gridCardPadH = metaFontSize * 1.0;
-    const gridCardHeight = gridDrawn ? gridCardInnerHeight + gridCardPadV * 1.2 : 0;
-    const gridCardWidth = gridDrawn ? legendGridWidth + gridCardPadH * 2 : 0;
+    let gridCardHeight = gridDrawn ? gridCardInnerHeight + gridCardPadV * 1.2 : 0;
+    let gridCardWidth = gridDrawn ? legendGridWidth + gridCardPadH * 2 : 0;
+
+    // ---- Build metadata-card content & measure widths ----
+    const height = pixelArray.length / (4 * width);
+    const widthCm = (width * pixelWidthCm).toFixed(1);
+    const heightCm = (height * pixelWidthCm).toFixed(1);
+    const metaRows = [
+        [t('pdfResolution'), `${width} × ${pixelArray.length / (4 * width)}`],
+        [t('pdfPlates'), `${platesPerRow} × ${platesPerCol} (${numPlates} ${t('pdfTotal')})`],
+        [t('pdfPlateSize'), `${plateWidth} × ${plateHeight}`],
+        [t('pdfSize'), `${widthCm} × ${heightCm} cm`],
+    ];
+    ctx.font = `bold ${metaFontSize}px Arial`;
+    let maxLabelW = 0;
+    metaRows.forEach((row) => {
+        const w = ctx.measureText(row[0]).width;
+        if (w > maxLabelW) maxLabelW = w;
+    });
+    ctx.font = `${metaFontSize}px Arial`;
+    let maxValueW = 0;
+    metaRows.forEach((row) => {
+        const w = ctx.measureText(row[1]).width;
+        if (w > maxValueW) maxValueW = w;
+    });
+    const colSeparatorGap = metaFontSize * 1.2;
+    const metaCardWidth = metaCardPadH * 2 + maxLabelW + colSeparatorGap + maxValueW;
+
+    // Right column, estimated: the real geometry is derived from legendBox once
+    // the legend is drawn, but the layout decision has to happen before the
+    // canvas is sized. legendBox.right lands on exactly this value.
+    const legendRightEst = pictureWidth * 0.25 - titleLegend.leftPadding + titleLegend.boxWidth;
+    const rightBlockWidthEst =
+        (pictureWidth * 2 - scalingFactor * 1.5) - (legendRightEst + scalingFactor * 2);
+
+    // ---- Fit the info row into the right column ----
+    // The row used to be laid out side-by-side unconditionally and anchored at
+    // the preview's left edge, with no width check. For mosaics with many
+    // plates per row the grid card ran off the page: at 128x80 (8 plates per
+    // row) the row needed ~1056 px against ~657 px available, so only three of
+    // eight columns were printed. Wrap the grid under the meta card when the
+    // two do not fit beside each other, and only then shrink the cells.
+    const MIN_GRID_CELL = 34; // still legible for a two-digit plate number
+    let gridBelowMeta = false;
+    if (gridDrawn) {
+        if (metaCardWidth + infoCardGap + gridCardWidth > rightBlockWidthEst) {
+            gridBelowMeta = true;
+        }
+        const gridAvailWidth = gridBelowMeta
+            ? rightBlockWidthEst
+            : rightBlockWidthEst - metaCardWidth - infoCardGap;
+        const maxCell = (gridAvailWidth - gridCardPadH * 2) / platesPerRow;
+        if (maxCell < legendSquareSide) {
+            legendSquareSide = Math.max(MIN_GRID_CELL, maxCell);
+            legendGridWidth = legendSquareSide * platesPerRow;
+            legendGridHeight = legendSquareSide * platesPerCol;
+            gridCardInnerHeight = gridHeaderHeight + legendGridHeight;
+            gridCardHeight = gridCardInnerHeight + gridCardPadV * 1.2;
+            gridCardWidth = legendGridWidth + gridCardPadH * 2;
+        }
+    }
+    const gridStackGap = gridDrawn && gridBelowMeta ? infoCardGap * 0.5 : 0;
 
     // Top group = info row (meta card + optional grid card) on one line,
     // with the BrickPic subtitle floating just above the cards. The logo now
     // lives above the legend in the left column, not in this row.
-    const topRowVisualHeight = Math.max(metaBlockHeight, gridCardHeight);
+    const topRowVisualHeight = gridDrawn && gridBelowMeta
+        ? metaBlockHeight + gridStackGap + gridCardHeight
+        : Math.max(metaBlockHeight, gridCardHeight);
     const topGroupHeight = subTitleHeight + topRowVisualHeight;
     const rightBlockHeight = topGroupHeight + infoToPreviewGap + previewHeightInit;
 
@@ -1395,37 +1487,16 @@ function generateInstructionTitlePage(
         previewWidth = previewHeight * srcAspect;
     }
 
-    // ---- Build metadata-card content & measure widths ----
-    const height = pixelArray.length / (4 * width);
-    const widthCm = (width * pixelWidthCm).toFixed(1);
-    const heightCm = (height * pixelWidthCm).toFixed(1);
-    const metaRows = [
-        [t('pdfResolution'), `${width} × ${pixelArray.length / (4 * width)}`],
-        [t('pdfPlates'), `${platesPerRow} × ${platesPerCol} (${numPlates} ${t('pdfTotal')})`],
-        [t('pdfPlateSize'), `${plateWidth} × ${plateHeight}`],
-        [t('pdfSize'), `${widthCm} × ${heightCm} cm`],
-    ];
-    ctx.font = `bold ${metaFontSize}px Arial`;
-    let maxLabelW = 0;
-    metaRows.forEach((row) => {
-        const w = ctx.measureText(row[0]).width;
-        if (w > maxLabelW) maxLabelW = w;
-    });
-    ctx.font = `${metaFontSize}px Arial`;
-    let maxValueW = 0;
-    metaRows.forEach((row) => {
-        const w = ctx.measureText(row[1]).width;
-        if (w > maxValueW) maxValueW = w;
-    });
-    const colSeparatorGap = metaFontSize * 1.2;
-    const metaCardWidth = metaCardPadH * 2 + maxLabelW + colSeparatorGap + maxValueW;
 
     // ---- Compose top row as a single centered group: meta card + grid card ----
-    const topRowTotalWidth =
-        metaCardWidth +
-        (gridDrawn ? infoCardGap + gridCardWidth : 0);
+    const topRowTotalWidth = gridDrawn
+        ? (gridBelowMeta ? Math.max(metaCardWidth, gridCardWidth)
+                         : metaCardWidth + infoCardGap + gridCardWidth)
+        : metaCardWidth;
 
-    const finalTopRowHeight = Math.max(metaBlockHeight, gridCardHeight);
+    const finalTopRowHeight = gridDrawn && gridBelowMeta
+        ? metaBlockHeight + gridStackGap + gridCardHeight
+        : Math.max(metaBlockHeight, gridCardHeight);
     const finalTopGroupHeight = subTitleHeight + finalTopRowHeight;
     const finalRightBlockHeight = finalTopGroupHeight + infoToPreviewGap + previewHeight;
     const rightBlockTop = (canvas.height - finalRightBlockHeight) / 2;
@@ -1434,7 +1505,11 @@ function generateInstructionTitlePage(
     // meta card and the plate-grid card all start at the same x-coordinate
     // as the left edge of the mosaic image below.
     const previewLeftEdge = (rightBlockLeft + rightBlockRight) / 2 - previewWidth / 2;
-    const topRowLeft = previewLeftEdge;
+    // Anchor on the preview, but never let the row spill past the page edge.
+    const topRowLeft = Math.max(
+        rightBlockLeft,
+        Math.min(previewLeftEdge, rightBlockRight - topRowTotalWidth)
+    );
     const topRowTop = rightBlockTop + subTitleHeight;
 
     // ---- "BrickPic" subtitle above the info row, left-aligned with the row ----
@@ -1453,7 +1528,9 @@ function generateInstructionTitlePage(
 
     // Metadata card
     const metaCardLeft = infoRowLeft;
-    const metaCardTop = infoRowTop + (infoRowVisualHeight - metaBlockHeight) / 2;
+    const metaCardTop = gridDrawn && gridBelowMeta
+        ? infoRowTop
+        : infoRowTop + (infoRowVisualHeight - metaBlockHeight) / 2;
     const metaCardRadius = Math.min(metaFontSize * 0.6, 14);
     ctx.fillStyle = "#f7f7f7";
     ctx.beginPath();
@@ -1494,8 +1571,12 @@ function generateInstructionTitlePage(
 
     // Plate-arrangement card (only when >1 plate)
     if (gridDrawn) {
-        const gridCardLeft = metaCardLeft + metaCardWidth + infoCardGap;
-        const gridCardTop = infoRowTop + (infoRowVisualHeight - gridCardHeight) / 2;
+        const gridCardLeft = gridBelowMeta
+            ? metaCardLeft
+            : metaCardLeft + metaCardWidth + infoCardGap;
+        const gridCardTop = gridBelowMeta
+            ? metaCardTop + metaBlockHeight + gridStackGap
+            : infoRowTop + (infoRowVisualHeight - gridCardHeight) / 2;
 
         ctx.fillStyle = "#444444";
         ctx.font = `bold ${gridHeaderFontSize}px Arial`;
@@ -1615,22 +1696,48 @@ function generateInstructionPage(
     // Same canvas width on every page so the legend renders at the same
     // absolute size in the final PDF (changing the canvas width changes
     // the PDF scaling factor and visually rescales everything on the page).
-    canvas.width = pictureWidth * 2;
+    // The legend column is MEASURED rather than assumed: it clamps its font to
+    // MIN_LEGEND_FONT, so below scalingFactor ~40.4 it stops fitting into the
+    // old fixed 0.5 x pictureWidth slot and overlapped the stud grid. Measuring
+    // against the FULL palette keeps this width identical on every page, which
+    // is what the note above actually requires.
+    const legendMetrics = bkLegendMetrics(
+        ctx, availableStudHexList, legendScale, studMap, ("" + pixelType).match("^variable.*$")
+    );
+    // Keep the legend exactly where it always sat (0.25 x pictureWidth) and slide
+    // it left ONLY as far as it must to clear the picture. Plate sizes 32 and 48
+    // therefore render byte-identically to before; only the admin-only 16er
+    // pages, where the box genuinely does not fit, move -- and only by the few
+    // pixels needed.
+    const legendLeftDefault = pictureWidth * 0.25 - legendMetrics.leftPadding;
+    const legendLeftLimit =
+        pictureWidth * 0.75 - legendScale * 0.8 - legendMetrics.boxWidth;
+    const legendLeft = Math.max(
+        legendScale * 0.6,
+        Math.min(legendLeftDefault, legendLeftLimit)
+    );
+    // Last resort: if even the far-left position is too tight, widen the page
+    // instead of overlapping.
+    const pictureX = Math.max(
+        pictureWidth * 0.75,
+        legendLeft + legendMetrics.boxWidth + legendScale * 0.8
+    );
+    canvas.width = pictureX + pictureWidth + pictureWidth * 0.25;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.rect(pictureWidth * 0.75, pictureHeight * 0.2, pictureWidth, pictureHeight);
+    ctx.rect(pictureX, pictureHeight * 0.2, pictureWidth, pictureHeight);
     ctx.stroke();
     ctx.fillStyle = "#000000";
-    ctx.fillRect(pictureWidth * 0.75, pictureHeight * 0.2, pictureWidth, pictureHeight);
+    ctx.fillRect(pictureX, pictureHeight * 0.2, pictureWidth, pictureHeight);
 
     ctx.lineWidth = 5;
     ctx.strokeStyle = "#000000";
     ctx.font = `${scalingFactor}px Arial`;
     ctx.beginPath();
-    ctx.fillText(`${t('pdfSection')} ${plateNumber}`, pictureWidth * 0.75, pictureHeight * 0.2 - scalingFactor);
+    ctx.fillText(`${t('pdfSection')} ${plateNumber}`, pictureX, pictureHeight * 0.2 - scalingFactor);
     ctx.stroke();
 
     ctx.lineWidth = 1;
@@ -1651,7 +1758,7 @@ function generateInstructionPage(
                 pixelArray[pixelIndex * 4 + 2]
             );
             ctx.beginPath();
-            const x = pictureWidth * 0.75 + (j * 2 + 1) * radius;
+            const x = pictureX + (j * 2 + 1) * radius;
             const y = pictureHeight * 0.2 + ((i % plateWidth) * 2 + 1) * radius;
             drawPixel(
                 ctx,
@@ -1674,7 +1781,7 @@ function generateInstructionPage(
     if (variablePixelPieceDimensions != null) {
         for (let i = 0; i < plateWidth; i++) {
             for (let j = 0; j < plateWidth; j++) {
-                const x = pictureWidth * 0.75 + (j * 2 + 1) * radius;
+                const x = pictureX + (j * 2 + 1) * radius;
                 const y = pictureHeight * 0.2 + ((i % plateWidth) * 2 + 1) * radius;
                 const piece = variablePixelPieceDimensions[i][j];
                 if (piece != null) {
@@ -1701,7 +1808,7 @@ function generateInstructionPage(
     // Sized to fit the standard right gutter (canvas.width = pictureWidth × 2,
     // picture ends at 1.75 × pictureWidth → ~0.25 × pictureWidth available).
     if (overviewContext) {
-        const gutterX = pictureWidth * 1.75 + legendScale * 0.6;
+        const gutterX = (pictureX + pictureWidth) + legendScale * 0.6;
         const availW = canvas.width - gutterX - legendScale * 0.4;
         const thumbSize = Math.min(availW, pictureHeight * 0.45);
         drawPlateOverviewThumbnail(ctx, overviewContext, pixelType, legendScale, {
@@ -1716,7 +1823,7 @@ function generateInstructionPage(
         visibleStudHexList,
         legendScale,
         ctx,
-        pictureWidth * 0.25,
+        legendLeft + legendMetrics.leftPadding,
         pictureHeight * 0.2 - radius,
         pixelType,
         studToNumber
