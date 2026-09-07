@@ -26,7 +26,7 @@ body.bk-creator {
     --c-accent-d: var(--bk-green-dark, #1B5E20);
     --c-gold:     #F2B705;
     --c-rail:     78px;
-    --c-panelw:   304px;
+    --c-panelw:   clamp(330px, 25vw, 430px);
     --c-head:     58px;
     margin: 0; background: var(--c-bg); overflow: hidden;
 }
@@ -78,11 +78,10 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     background: var(--c-accent); color: #fff; border: 0;
     border-radius: 11px; padding: 11px 20px; cursor: pointer;
     font: inherit; font-weight: 800;
-    box-shadow: 0 2px 0 var(--c-accent-d);
-    transition: background .18s ease, transform .1s ease, box-shadow .1s ease;
+    /* No bevel: the shop's own CTA (.bk-size-cta on page 264) is flat. */
+    transition: background .18s ease;
 }
-.bk-cr-finish:hover { background: #35913A; }
-.bk-cr-finish:active { transform: translateY(2px); box-shadow: 0 0 0 var(--c-accent-d); }
+.bk-cr-finish:hover { background: var(--c-accent-d); }
 
 /* ------------------------------------------------------------------ body */
 .bk-cr-main { display: grid; grid-template-columns: var(--c-rail) var(--c-panelw) 1fr; min-height: 0; }
@@ -114,8 +113,15 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 }
 
 /* ----------------------------------------------------------- panel body */
-.bk-cr-side { background: var(--c-panel); border-right: 1px solid var(--c-line); overflow-y: auto; min-height: 0; }
-.bk-cr-panels { padding: 16px 16px 44px; }
+.bk-cr-side {
+    background: var(--c-panel); border-right: 1px solid var(--c-line);
+    display: grid; grid-template-rows: 1fr auto; min-height: 0; overflow: hidden;
+}
+.bk-cr-panels { padding: 16px 18px 34px; overflow-y: auto; min-height: 0; }
+
+/* Price and "Bestellen" stay in view while the size list scrolls above them. */
+.bk-cr-foot { border-top: 1px solid var(--c-line); background: #FAFCFA; max-height: min(46vh, 430px); overflow-y: auto; }
+.bk-cr-foot:empty { display: none; }
 .bk-cr-panel[hidden] { display: none; }
 
 .bk-cr-ptitle {
@@ -151,7 +157,7 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 /* Size cards read as plates: proportional preview, stacked facts, price last. */
 .bk-cr-sizes { display: grid; gap: 8px; }
 .bk-cr-size-card {
-    display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 11px;
+    display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 12px;
     text-align: left; background: var(--c-panel);
     border: 1.5px solid var(--c-line); border-radius: 11px;
     padding: 9px 11px; cursor: pointer; font: inherit;
@@ -167,9 +173,11 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     border: 1.5px solid #B7CCB8;
 }
 .bk-cr-size-card[aria-pressed="true"] .bk-cr-prop i { border-color: var(--c-accent); background: #CFE5D0; }
-.bk-cr-size-cm { display: block; font-weight: 800; font-size: .9rem; }
-.bk-cr-size-sub { display: block; font-size: .72rem; line-height: 1.35; color: var(--c-ink-soft); margin-top: 2px; }
-.bk-cr-size-price { font-weight: 800; color: var(--c-accent-d); font-size: .92rem; white-space: nowrap; }
+.bk-cr-size-txt { display: block; min-width: 0; }
+.bk-cr-size-top { display: flex; align-items: baseline; gap: 10px; }
+.bk-cr-size-cm { font-weight: 800; font-size: .95rem; white-space: nowrap; }
+.bk-cr-size-sub { display: block; font-size: .74rem; line-height: 1.35; color: var(--c-ink-soft); margin-top: 2px; }
+.bk-cr-size-price { margin-left: auto; font-weight: 800; color: var(--c-accent-d); font-size: .95rem; white-space: nowrap; }
 
 /* ------------------------------------------------------------- sliders */
 .bk-cr-field { margin-bottom: 15px; }
@@ -348,3 +356,37 @@ html.bk-embedded body.bk-creator .bk-cr-root {
 html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
     max-height: max(240px, calc(100vh - 190px));
 }
+
+
+/* =========================================================== embedded mode
+   Inside the shop overlay the page already carries a bar saying
+   "Mosaik-Konfigurator - BRICKONAS BrickPic" with the close button. Repeating
+   the same identity here produced two stacked headers and cost ~110 px of the
+   height the editor exists to gain, so in the overlay this bar keeps only the
+   facts and the action. */
+html.bk-embedded body.bk-creator { --c-head: 50px; }
+html.bk-embedded .bk-cr-back,
+html.bk-embedded .bk-cr-wordmark { display: none; }
+html.bk-embedded .bk-cr-head { padding: 0 14px; }
+html.bk-embedded .bk-cr-meta { margin-left: 0; }
+
+/* ===================================================== order card in footer
+   The shop's own card is reused as-is; inside the editor its marketing title
+   and paragraph are redundant (the customer is already configuring) and only
+   pushed price and button out of sight. */
+.bk-cr-foot .mosaic-product-card {
+    margin: 0; padding: 13px 18px 15px; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none;
+}
+.bk-cr-foot .mosaic-product-title,
+.bk-cr-foot .mosaic-product-desc { display: none; }
+.bk-cr-foot .mosaic-product-meta { margin: 0 0 9px; }
+.bk-cr-foot .mosaic-product-price-row { display: flex; align-items: center; gap: 12px; margin: 0; }
+.bk-cr-foot .mosaic-product-price { font-size: 1.4rem; font-weight: 800; color: var(--c-accent-d); }
+.bk-cr-foot .mosaic-add-to-cart-btn { margin-left: auto; flex: 0 0 auto; }
+.bk-cr-foot .mosaic-order-hint { margin-top: 10px; font-size: .72rem; line-height: 1.4; }
+.bk-cr-foot .mosaic-frame-addon { margin-top: 11px; }
+
+/* One short pulse after "Fertig", so the eye is taken to the button. */
+@keyframes bk-cr-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(46,125,50,.55); } 50% { box-shadow: 0 0 0 8px rgba(46,125,50,0); } }
+.bk-cr-pulse { animation: bk-cr-pulse 700ms ease-out 2; }

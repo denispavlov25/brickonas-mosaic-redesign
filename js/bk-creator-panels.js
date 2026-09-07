@@ -194,10 +194,34 @@
             recalcTimer = setTimeout(recalc, RECALC_DEBOUNCE_MS);
         }
 
+        /**
+         * Park the order card in the panel footer as soon as the app builds it,
+         * and keep its figures honest.
+         *
+         * The app fills the card from `updateMosaicProductMeta()`, which only runs
+         * off a slider event -- and none fires on load, so straight out of the box
+         * the card still showed its hard-coded HTML defaults (48x48, 2.304 Teile,
+         * 69,99 EUR). That was invisible while the card only appeared after
+         * "Fertig"; now that it sits next to "Bestellen" from the start, a stale
+         * price would be the worst bug this panel could have.
+         */
+        function refreshOrderCard() {
+            if (typeof window.updateMosaicProductMeta === "function") {
+                try { window.updateMosaicProductMeta(); } catch (e) { /* app not ready yet */ }
+            }
+        }
+        function parkOrderCard() {
+            var card = document.getElementById("mosaic-product-card"), foot = C.foot();
+            if (!card || !foot) return false;
+            if (card.parentElement !== foot) foot.appendChild(card);
+            refreshOrderCard();
+            return true;
+        }
+
         window.bkCrFinish = function () {
-            var card = document.getElementById("mosaic-product-card");
-            if (card) { C.select("size"); P.size.appendChild(card); card.scrollIntoView({ block: "center" }); }
-            else { recalc(); }
+            if (!parkOrderCard()) { recalc(); return; }
+            var btn = document.getElementById("order-mosaic-button");
+            if (btn) { btn.classList.add("bk-cr-pulse"); setTimeout(function () { btn.classList.remove("bk-cr-pulse"); }, 1400); }
         };
 
         /* ----------------------------------------------------- GRÖSSE tab */
@@ -221,6 +245,12 @@
             shapeRow.appendChild(b);
         });
         P.size.append(shapeRow, sizeList);
+
+        /** 192 instead of "192,0" -- the decimal is noise and costs a line break. */
+        function cm(studs) {
+            var v = studs * 0.8;
+            return (v % 1 ? v.toFixed(1) : String(v)).replace(".", ",");
+        }
 
         function variations() {
             var V = window.MOSAIC_VARIATIONS || {};
@@ -249,11 +279,13 @@
                 card.setAttribute("aria-pressed", v.key === cur ? "true" : "false");
                 card.innerHTML =
                     '<span class="bk-cr-prop"><i style="width:' + pw + 'px;height:' + ph + 'px"></i></span>' +
-                    '<span><span class="bk-cr-size-cm">' + (v.w * 0.8).toFixed(1).replace(".", ",") + " &times; " +
-                        (v.h * 0.8).toFixed(1).replace(".", ",") + ' cm</span>' +
+                    '<span class="bk-cr-size-txt">' +
+                        '<span class="bk-cr-size-top">' +
+                            '<span class="bk-cr-size-cm">' + cm(v.w) + " &times; " + cm(v.h) + ' cm</span>' +
+                            '<span class="bk-cr-size-price">' + v.price + " &euro;</span>" +
+                        "</span>" +
                         '<span class="bk-cr-size-sub">' + (v.w / v.plate) + " &times; " + (v.h / v.plate) +
-                        " Platten &middot; " + v.w + "&times;" + v.h + " Noppen</span></span>" +
-                    '<span class="bk-cr-size-price">' + v.price + " &euro;</span>";
+                        " Platten &middot; " + v.w + "&times;" + v.h + " Noppen</span></span>";
                 card.addEventListener("click", function () { pickSize(v); });
                 sizeList.appendChild(card);
             });
@@ -425,6 +457,7 @@
             ch.studs.querySelector("b").textContent = w + " × " + h;
             var v = (window.MOSAIC_VARIATIONS || {})[currentKey()];
             ch.price.querySelector("b").innerHTML = v ? v.price + " &euro;" : "—";
+            parkOrderCard();
         }
         ["width-slider", "height-slider", "width-step-select", "height-step-select"].forEach(function (id) {
             var n = document.getElementById(id);
@@ -437,6 +470,13 @@
         [].forEach.call(document.querySelectorAll(".mosaic-controls-panel"), function (n) { attic.appendChild(n); });
 
         renderSizes(); updateHead(); C.select("size");
+
+        // The app builds the order card only after the first mosaic is computed,
+        // so polling once is not enough -- watch until it appears, then stop.
+        if (!parkOrderCard() && window.MutationObserver) {
+            var mo = new MutationObserver(function () { if (parkOrderCard()) mo.disconnect(); });
+            mo.observe(document.body, { childList: true, subtree: true });
+        }
 
         // Without this the editor would open on the raw photo and every control
         // would look broken: the mosaic canvas simply would not exist yet.

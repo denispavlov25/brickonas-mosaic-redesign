@@ -55,7 +55,7 @@
         { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" }
     ];
 
-    var root, attic, panels = {}, view, stagebar, chips = {};
+    var root, attic, panels = {}, view, stagebar, foot, chips = {};
 
     function buildShell() {
         attic = el("div", "bk-cr-attic");
@@ -91,7 +91,10 @@
         rail.setAttribute("role", "tablist");
         var side = el("div", "bk-cr-side");
         var body = el("div", "bk-cr-panels");
-        side.appendChild(body);
+        // The order card lives in a footer that does NOT scroll: price and
+        // "Bestellen" stay in view while the size list above is scrolled.
+        foot = el("div", "bk-cr-foot");
+        side.append(body, foot);
 
         TABS.forEach(function (t, i) {
             var b = el("button", "bk-cr-tab", svg(t.icon) + "<span>" + t.label + "</span>");
@@ -146,6 +149,7 @@
         attic:  function () { return attic; },
         view:   function () { return view; },
         stagebar: function () { return stagebar; },
+        foot:   function () { return foot; },
         chips:  function () { return chips; }
     };
 })();
