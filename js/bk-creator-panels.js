@@ -178,17 +178,11 @@
         document.getElementById("bk-cr-recalc").addEventListener("click", recalc);
 
         /** Small mosaics may recompute on their own; big ones wait for a click. */
-        function maybeAutoRecalc(force) {
+        /** Every change recomputes; the debounce turns a dragged slider into one run. */
+        function maybeAutoRecalc() {
             clearTimeout(recalcTimer);
-            if (!force && studs() > AUTO_RECALC_MAX_STUDS) {
-                hintRecalcNeeded();
-                return;
-            }
-            recalcTimer = setTimeout(recalc, 600);
+            recalcTimer = setTimeout(recalc, RECALC_DEBOUNCE_MS);
         }
-        /** Above the cap we do not recompute silently — we ask for a click. */
-        function hintRecalcNeeded() { markStale(true); }
-        function clearRecalcHint() { markStale(false); }
 
         window.bkCrFinish = function () {
             var card = document.getElementById("mosaic-product-card");
