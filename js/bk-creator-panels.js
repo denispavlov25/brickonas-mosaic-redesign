@@ -124,15 +124,24 @@
          * an invisible crop frame — which is exactly why cropping felt broken.
          * Give the area a real width for the crop view and rebuild the cropper.
          */
+        // initializeCropper() destroys and recreates the cropper, which resets the
+        // frame to the default. Carry the customer's frame across the rebuild,
+        // otherwise coming back to this tab silently throws their crop away.
+        var savedCrop = null;
         function fixCropper() {
             var cv = document.getElementById("step-1-canvas-upscaled");
             var area = cv && cv.closest(".mosaic-canvas-area");
             if (!area) return;
-            var w = Math.max(280, Math.min(view.clientWidth - 48, 620));
-            area.style.width = w + "px";
-            if (typeof window.initializeCropper === "function") {
-                try { window.initializeCropper(); } catch (e) { /* keep the editor alive */ }
-            }
+            if (cv.cropper) { try { savedCrop = cv.cropper.getData(true); } catch (e) { /* keep going */ } }
+            area.style.width = Math.max(280, Math.min(view.clientWidth - 48, 620)) + "px";
+            if (typeof window.initializeCropper !== "function") return;
+            try { window.initializeCropper(); } catch (e) { return; }
+            if (!savedCrop) return;
+            var restore = function () {
+                try { if (cv.cropper) cv.cropper.setData(savedCrop); } catch (e) { /* frame stays default */ }
+            };
+            cv.addEventListener("ready", restore, { once: true });
+            setTimeout(restore, 220);   // belt and braces: 'ready' may already have fired
         }
         function unfixCropper() {
             var cv = document.getElementById("step-1-canvas-upscaled");
@@ -149,8 +158,9 @@
             } else {
                 if (wasCrop) unfixCropper();
                 lift(bestArea());
-                // Leaving the crop tab: the cut changed, so the mosaic must follow.
-                if (wasCrop) maybeAutoRecalc();
+                // Deliberately NO recompute here: the crop is applied only by the
+                // "Zuschnitt übernehmen" button. Recomputing on tab change applied
+                // crops the customer never confirmed.
             }
         };
         setInterval(function () { if (currentTab !== "crop") lift(bestArea()); }, 900);
@@ -295,7 +305,12 @@
 
         var applyCrop = el("button", "bk-cr-primary", "Zuschnitt übernehmen");
         applyCrop.type = "button";
-        applyCrop.addEventListener("click", function () { recalc(); C.select("size"); });
+        applyCrop.addEventListener("click", function () {
+            var cv = document.getElementById("step-1-canvas-upscaled");
+            if (cv && cv.cropper) { try { savedCrop = cv.cropper.getData(true); } catch (e) { /* ignore */ } }
+            recalc();
+            C.select("size");
+        });
         P.crop.appendChild(applyCrop);
         P.crop.appendChild(el("p", "bk-cr-hint",
             "Solange du hier bist, siehst du das Originalfoto. Nach dem Übernehmen zeigt der Editor wieder das Mosaik."));
