@@ -272,3 +272,57 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     .bk-cr-wordmark small { display: none; }
     .bk-cr-chip u { display: none; }
 }
+
+/* ---------------------------------------------------- stale preview -----
+   When the configuration changed but the mosaic was not recomputed (large
+   mosaics do not recompute on their own), say so ON the picture rather than
+   in a corner button nobody notices. Non-modal on purpose: the customer can
+   keep trying sizes and only compute when they have decided. */
+.bk-cr-view { position: relative; }
+.bk-cr-view.is-stale canvas[id$="-upscaled"] { filter: grayscale(.55) opacity(.42); }
+.bk-cr-stale {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    pointer-events: none; padding: 20px;
+}
+.bk-cr-stale[hidden] { display: none; }
+.bk-cr-stale-card {
+    pointer-events: auto; text-align: center; max-width: 330px;
+    background: var(--c-panel); border: 1px solid var(--c-line);
+    border-radius: 14px; padding: 20px 22px;
+    box-shadow: 0 12px 34px rgba(26,42,27,.18);
+}
+.bk-cr-stale-card b { display: block; font-family: var(--bk-font-heading,'Fredoka',sans-serif);
+    font-size: 1.04rem; font-weight: 600; margin-bottom: 6px; }
+.bk-cr-stale-card p { margin: 0 0 14px; font-size: .8rem; line-height: 1.5; color: var(--c-ink-soft); }
+.bk-cr-stale-go {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--c-accent); color: #fff; border: 0;
+    border-radius: 11px; padding: 11px 20px; cursor: pointer;
+    font: inherit; font-weight: 800; box-shadow: 0 2px 0 var(--c-accent-d);
+}
+.bk-cr-stale-go:hover { background: #35913A; }
+.bk-cr-stale-go:active { transform: translateY(2px); box-shadow: none; }
+
+/* --------------------------------------------------------- crop tools --- */
+.bk-cr-cropbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 12px; }
+.bk-cr-cropbtn {
+    display: grid; justify-items: center; gap: 5px;
+    padding: 10px 4px; border: 1.5px solid var(--c-line); border-radius: 10px;
+    background: var(--c-panel); cursor: pointer; font: inherit;
+    font-size: .74rem; font-weight: 700; color: var(--c-ink-soft);
+}
+.bk-cr-cropbtn:hover { border-color: var(--c-accent); color: var(--c-accent-d); }
+.bk-cr-cropbtn svg { width: 17px; height: 17px; }
+.bk-cr-primary {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--c-accent); color: #fff; border: 0; border-radius: 11px;
+    padding: 12px 18px; cursor: pointer; font: inherit; font-weight: 800;
+    box-shadow: 0 2px 0 var(--c-accent-d);
+}
+.bk-cr-primary:hover { background: #35913A; }
+.bk-cr-primary:active { transform: translateY(2px); box-shadow: none; }
+.bk-cr-note {
+    margin: 0 0 13px; padding: 10px 12px; border-radius: 10px;
+    background: #EAF4EA; border: 1px solid #CBE3CC;
+    font-size: .77rem; line-height: 1.45; color: #23561F;
+}

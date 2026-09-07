@@ -35,7 +35,7 @@
             '<button type="button" id="bk-cr-zoom-reset">Zurücksetzen</button>' +
             '<span class="bk-cr-spacer"></span>' +
             '<span class="bk-cr-busy" id="bk-cr-busy">Mosaik wird berechnet</span>' +
-            '<button type="button" id="bk-cr-recalc">Mosaik berechnen</button>';
+            '<button type="button" id="bk-cr-recalc">Neu berechnen</button>';
 
         function applyZoom() {
             var v = +document.getElementById("bk-cr-zoom-range").value;
@@ -85,21 +85,66 @@
             if (hasContent("step-4")) return areaOf("step-4");
             return areaOf("step-1");
         }
+        // "Your preview is out of date" lives ON the picture, not in a corner.
+        var stale = el("div", "bk-cr-stale");
+        stale.hidden = true;
+        stale.innerHTML =
+            '<div class="bk-cr-stale-card">' +
+              "<b>Vorschau ist nicht mehr aktuell</b>" +
+              "<p>Große Mosaike berechnen wir nicht automatisch neu — sonst würde der Editor bei jedem Klick stocken. " +
+              "Du kannst erst in Ruhe Größen ausprobieren und dann berechnen.</p>" +
+              '<button type="button" class="bk-cr-stale-go">Mosaik neu berechnen</button>' +
+            "</div>";
+        view.appendChild(stale);
+        stale.querySelector(".bk-cr-stale-go").addEventListener("click", function () { recalc(); });
+        function markStale(on) {
+            stale.hidden = !on;
+            view.classList.toggle("is-stale", !!on);
+        }
+
         var shownArea = null, currentTab = "size";
         function lift(area) {
             if (!area || area === shownArea) return;
             if (shownArea) attic.appendChild(shownArea);
-            view.appendChild(area);
+            view.insertBefore(area, stale);
             area.style.display = "";
             shownArea = area;
             applyZoom();
         }
+        /**
+         * Cropper.js measures its container when it is built. Moving that
+         * container onto the stage leaves it with a stale (1 px wide) layout and
+         * an invisible crop frame — which is exactly why cropping felt broken.
+         * Give the area a real width for the crop view and rebuild the cropper.
+         */
+        function fixCropper() {
+            var cv = document.getElementById("step-1-canvas-upscaled");
+            var area = cv && cv.closest(".mosaic-canvas-area");
+            if (!area) return;
+            var w = Math.max(280, Math.min(view.clientWidth - 48, 620));
+            area.style.width = w + "px";
+            if (typeof window.initializeCropper === "function") {
+                try { window.initializeCropper(); } catch (e) { /* keep the editor alive */ }
+            }
+        }
+        function unfixCropper() {
+            var cv = document.getElementById("step-1-canvas-upscaled");
+            var area = cv && cv.closest(".mosaic-canvas-area");
+            if (area) area.style.width = "";
+        }
+
         window.bkCrShowStage = function (tab) {
             var wasCrop = currentTab === "crop";
             currentTab = tab;
-            lift(tab === "crop" ? areaOf("step-1") : bestArea());
-            // Leaving the crop tab: the cut has changed, so the mosaic must follow.
-            if (wasCrop && tab !== "crop") maybeAutoRecalc(true);
+            if (tab === "crop") {
+                lift(areaOf("step-1"));
+                setTimeout(fixCropper, 60);
+            } else {
+                if (wasCrop) unfixCropper();
+                lift(bestArea());
+                // Leaving the crop tab: the cut changed, so the mosaic must follow.
+                if (wasCrop) maybeAutoRecalc(true);
+            }
         };
         setInterval(function () { if (currentTab !== "crop") lift(bestArea()); }, 900);
 
@@ -138,20 +183,8 @@
             recalcTimer = setTimeout(recalc, 600);
         }
         /** Above the cap we do not recompute silently — we ask for a click. */
-        function hintRecalcNeeded() {
-            var b = document.getElementById("bk-cr-recalc");
-            if (!b) return;
-            b.textContent = "Mosaik aktualisieren";
-            b.style.background = "#EAF4EA";
-            b.style.borderColor = "#9CCB9E";
-            b.style.color = "#1B5E20";
-        }
-        function clearRecalcHint() {
-            var b = document.getElementById("bk-cr-recalc");
-            if (!b) return;
-            b.textContent = "Mosaik berechnen";
-            b.style.background = ""; b.style.borderColor = ""; b.style.color = "";
-        }
+        function hintRecalcNeeded() { markStale(true); }
+        function clearRecalcHint() { markStale(false); }
 
         window.bkCrFinish = function () {
             var card = document.getElementById("mosaic-product-card");
@@ -233,9 +266,41 @@
         }
 
         /* -------------------------------------------------- ZUSCHNITT tab */
-        C.heading(P.crop, "Zuschnitt", "Ziehen verschiebt den Ausschnitt, Mausrad oder zwei Finger zoomen.");
+        C.heading(P.crop, "Zuschnitt", "Der Rahmen zeigt, was gebaut wird — alles außerhalb fällt weg.");
+        P.crop.appendChild(el("p", "bk-cr-note",
+            "Der Rahmen ist auf dein gewähltes Format festgelegt. Zieh ihn an eine andere Stelle " +
+            "oder an den Ecken größer und kleiner."));
+
+        function cropper() {
+            var c = document.getElementById("step-1-canvas-upscaled");
+            return c ? c.cropper : null;
+        }
+        var cropBtns = el("div", "bk-cr-cropbtns");
+        [
+            ["Ganzes Bild", '<rect x="3" y="4" width="18" height="16" rx="2"/>', function (cr) {
+                var d = cr.getCanvasData();
+                cr.setCropBoxData({ left: d.left, top: d.top, width: d.width, height: d.height });
+            }],
+            ["Mittig setzen", '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M3 3h2M19 3h2M3 21h2M19 21h2"/>', function (cr) { cr.reset(); }],
+            ["90° drehen", '<path d="M4 12a8 8 0 1 1 3 6"/><path d="M4 12V7m0 5h5"/>', function (cr) { cr.rotate(90); }],
+            ["Anderes Bild", '<path d="M4 16l5-5 4 4 3-3 4 4"/><rect x="3" y="4" width="18" height="16" rx="2"/>', null]
+        ].forEach(function (t) {
+            var b = el("button", "bk-cr-cropbtn", C.svg(t[1]) + "<span>" + t[0] + "</span>");
+            b.type = "button";
+            b.addEventListener("click", function () {
+                if (t[2]) { var cr = cropper(); if (cr) { t[2](cr); markStale(true); } }
+                else { var pick = document.getElementById("image-input-new"); if (pick) { var real = pick.querySelector("button,input,label") || pick; real.click(); } }
+            });
+            cropBtns.appendChild(b);
+        });
+        P.crop.appendChild(cropBtns);
+
+        var applyCrop = el("button", "bk-cr-primary", "Zuschnitt übernehmen");
+        applyCrop.type = "button";
+        applyCrop.addEventListener("click", function () { recalc(); C.select("size"); });
+        P.crop.appendChild(applyCrop);
         P.crop.appendChild(el("p", "bk-cr-hint",
-            "Der Rahmen zeigt, was später gebaut wird. Alles außerhalb fällt weg."));
+            "Solange du hier bist, siehst du das Originalfoto. Nach dem Übernehmen zeigt der Editor wieder das Mosaik."));
 
         /* ----------------------------------------------------- FARBEN tab */
         C.heading(P.color, "Farben", "Welche Klemmbaustein-Farben verwendet werden dürfen.");
