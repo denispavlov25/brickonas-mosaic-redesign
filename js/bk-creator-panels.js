@@ -55,16 +55,34 @@
         // Move the canvas AREA, never the bare canvas: Cropper.js wraps
         // #step-1-canvas-upscaled in its own DOM and lifting the canvas out of
         // that wrapper breaks cropping.
-        var STEPS = ["step-1", "step-2", "step-3", "step-4"];
+        // Find the canvas area by walking UP from the canvas itself. Guessing a
+        // container id does not work: step 3's area sits under #visual-step-2,
+        // not under #step-3-color-tab-content like step 4's does. Walking up also
+        // survives the area being moved onto the stage.
+        var CANVAS_OF = { "step-1": "step-1-canvas-upscaled",
+                          "step-3": "step-3-canvas-upscaled",
+                          "step-4": "step-4-canvas-upscaled" };
         function areaOf(step) {
-            var host = document.getElementById(step + "-color-tab-content");
-            return host ? host.querySelector(".mosaic-canvas-area") : null;
+            var c = document.getElementById(CANVAS_OF[step]);
+            return c ? c.closest(".mosaic-canvas-area") : null;
         }
+        // Each area holds TWO canvases: a small working one (one pixel per stud)
+        // and the upscaled one that is actually displayed. Judge the upscaled one
+        // — the working canvas is only 96 px wide and looks "empty" by size.
+        function hasContent(step) {
+            var c = document.getElementById(CANVAS_OF[step]);
+            return !!(c && c.width > 300);
+        }
+        /**
+         * Step 3 is THE canvas of this editor: it renders the mosaic as studs and
+         * carries the paint/hover handlers. Everything except cropping should look
+         * at it, so a colour, adjustment or size change is visible immediately.
+         * Fall back to step 4, then to the raw crop preview while nothing is
+         * computed yet.
+         */
         function bestArea() {
-            for (var i = STEPS.length - 1; i >= 0; i--) {
-                var a = areaOf(STEPS[i]);
-                if (a) { var c = a.querySelector("canvas"); if (c && c.width > 300) return a; }
-            }
+            if (hasContent("step-3")) return areaOf("step-3");
+            if (hasContent("step-4")) return areaOf("step-4");
             return areaOf("step-1");
         }
         var shownArea = null, currentTab = "size";
@@ -77,17 +95,18 @@
             applyZoom();
         }
         window.bkCrShowStage = function (tab) {
+            var wasCrop = currentTab === "crop";
             currentTab = tab;
             lift(tab === "crop" ? areaOf("step-1") : bestArea());
+            // Leaving the crop tab: the cut has changed, so the mosaic must follow.
+            if (wasCrop && tab !== "crop") maybeAutoRecalc(true);
         };
         setInterval(function () { if (currentTab !== "crop") lift(bestArea()); }, 900);
 
         /* ------------------------------------------- full recalculation */
         var busy = document.getElementById("bk-cr-busy");
         function nextButton() {
-            return [].slice.call(document.querySelectorAll("button,a")).find(function (b) {
-                return /Weiter:\s*Farben/.test(b.textContent || "");
-            });
+            return document.getElementById("create-mosaic-btn");
         }
         var recalcTimer = null;
         function recalc() {
@@ -100,7 +119,7 @@
             var poll = setInterval(function () {
                 tries++;
                 var done = !document.querySelector(".show-spinner");
-                if (done || tries > 240) { clearInterval(poll); busy.classList.remove("on"); }
+                if (done || tries > 240) { clearInterval(poll); busy.classList.remove("on"); clearRecalcHint(); }
             }, 500);
         }
         document.getElementById("bk-cr-recalc").addEventListener("click", recalc);
@@ -110,10 +129,28 @@
                    (+document.getElementById("height-slider").value);
         }
         /** Small mosaics may recompute on their own; big ones wait for a click. */
-        function maybeAutoRecalc() {
+        function maybeAutoRecalc(force) {
             clearTimeout(recalcTimer);
-            if (studs() > AUTO_RECALC_MAX_STUDS) return;
+            if (!force && studs() > AUTO_RECALC_MAX_STUDS) {
+                hintRecalcNeeded();
+                return;
+            }
             recalcTimer = setTimeout(recalc, 600);
+        }
+        /** Above the cap we do not recompute silently — we ask for a click. */
+        function hintRecalcNeeded() {
+            var b = document.getElementById("bk-cr-recalc");
+            if (!b) return;
+            b.textContent = "Mosaik aktualisieren";
+            b.style.background = "#EAF4EA";
+            b.style.borderColor = "#9CCB9E";
+            b.style.color = "#1B5E20";
+        }
+        function clearRecalcHint() {
+            var b = document.getElementById("bk-cr-recalc");
+            if (!b) return;
+            b.textContent = "Mosaik berechnen";
+            b.style.background = ""; b.style.borderColor = ""; b.style.color = "";
         }
 
         window.bkCrFinish = function () {
@@ -232,7 +269,7 @@
                 b.setAttribute("aria-pressed", "true");
                 b.addEventListener("click", function () {
                     var x = row.querySelector('button[type="submit"], button.btn-danger, td:last-child button');
-                    if (x) { x.click(); setTimeout(renderPalette, 120); }
+                    if (x) { x.click(); setTimeout(function () { renderPalette(); maybeAutoRecalc(); }, 120); }
                 });
                 grid.appendChild(b);
             });
@@ -300,13 +337,6 @@
         P.paint.appendChild(el("p", "bk-cr-hint",
             "Wähle eine Farbe und klicke im Mosaik auf eine Noppe. Das Ergebnis bleibt beim Neuberechnen erhalten."));
 
-        /* ------------------------------------------------------ TIEFE tab */
-        C.heading(P.depth, "Tiefe", "Mehrschichtige Tiefenplatten — unser Extra gegenüber flachen Mosaiken.");
-        [].forEach.call(document.querySelectorAll(".mosaic-control-section"), function (sec) {
-            var head = sec.querySelector(".mosaic-control-header");
-            if (head && /3D|Tiefe/i.test(head.textContent || "")) P.depth.appendChild(sec);
-        });
-
         /* ------------------------------------------------------- header */
         function updateHead() {
             var ch = C.chips();
@@ -329,6 +359,10 @@
         [].forEach.call(document.querySelectorAll(".mosaic-controls-panel"), function (n) { attic.appendChild(n); });
 
         renderSizes(); updateHead(); C.select("size");
+
+        // Without this the editor would open on the raw photo and every control
+        // would look broken: the mosaic canvas simply would not exist yet.
+        setTimeout(function () { if (!hasContent("step-3")) recalc(); }, 400);
     }
 
     // The wizard reveals #step-navigation exactly when an image has been loaded

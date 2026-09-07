@@ -52,8 +52,7 @@
         { id: "color",  label: "Farben",    icon: ICON.color,  accent: "#B03A2E", soft: "#FBEDEB" },
         { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: "#B03A2E", soft: "#FBEDEB" },
         { id: "ai",     label: "KI",        icon: ICON.ai,     accent: "#5B4B8A", soft: "#F0ECF7" },
-        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" },
-        { id: "depth",  label: "Tiefe",     icon: ICON.depth,  accent: "#2E7D32", soft: "#EAF4EA" }
+        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" }
     ];
 
     var root, attic, panels = {}, view, stagebar, chips = {};

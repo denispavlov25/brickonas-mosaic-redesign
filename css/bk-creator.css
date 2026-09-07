@@ -130,10 +130,10 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 .bk-cr-psub { margin: 0 0 15px; font-size: .79rem; line-height: 1.45; color: var(--c-ink-soft); }
 .bk-cr-hint { margin: 12px 0 0; font-size: .79rem; line-height: 1.5; color: var(--c-ink-soft); }
 .bk-cr-undo {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
     background: none; border: 1px solid var(--c-line); cursor: pointer;
-    font: inherit; font-size: .78rem; font-weight: 700; color: var(--c-ink-soft);
-    padding: 6px 10px; border-radius: 8px;
+    font: inherit; font-size: .73rem; font-weight: 700; color: var(--c-ink-soft);
+    padding: 6px 8px; border-radius: 8px; white-space: nowrap;
 }
 .bk-cr-undo:hover { border-color: var(--c-line-2); color: var(--c-ink); background: var(--c-bg); }
 
@@ -237,6 +237,17 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 .bk-cr-stagebar .bk-cr-spacer { margin-left: auto; }
 .bk-cr-view { overflow: auto; display: grid; place-items: center; padding: 22px; min-height: 0; }
 .bk-cr-view canvas, .bk-cr-view img { border-radius: 8px; background: #fff; }
+/* Fit the (large) display canvas to the stage; zoom takes it beyond 100 %. */
+/* max-height:100% would resolve against an auto-height parent and do nothing,
+   so cap against the viewport minus header, stage bar and padding. */
+.bk-cr-view canvas[id$="-upscaled"] {
+    max-width: 100%;
+    max-height: max(260px, calc(100vh - 190px));
+    width: auto; height: auto;
+}
+.bk-cr-view .mosaic-canvas-area { max-width: 100%; margin-bottom: 0 !important; }
+/* Each area carries a small working canvas next to the displayed one. */
+.bk-cr-view canvas:not([id$="-upscaled"]) { display: none !important; }
 .bk-cr-view .mosaic-canvas-area { box-shadow: 0 8px 30px rgba(26,42,27,.14); border-radius: 10px; }
 
 .bk-cr-busy {
