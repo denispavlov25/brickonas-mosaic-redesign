@@ -17,7 +17,7 @@
     "use strict";
     if (!/[?&]ui=new\b/.test(window.location.search)) return;
 
-    var AUTO_RECALC_MAX_STUDS = 144 * 144;   // above this, only on request
+    var RECALC_DEBOUNCE_MS = 500;  // one compute after the customer stops fiddling
 
     function boot() {
         var C = window.BkCreator;
@@ -86,27 +86,34 @@
             return areaOf("step-1");
         }
         // "Your preview is out of date" lives ON the picture, not in a corner.
-        var stale = el("div", "bk-cr-stale");
-        stale.hidden = true;
-        stale.innerHTML =
+        // One overlay, shown while a run is in flight, so a two-second wait never
+        // reads as a frozen editor.
+        var overlay = el("div", "bk-cr-stale");
+        overlay.hidden = true;
+        overlay.innerHTML =
             '<div class="bk-cr-stale-card">' +
-              "<b>Vorschau ist nicht mehr aktuell</b>" +
-              "<p>Große Mosaike berechnen wir nicht automatisch neu — sonst würde der Editor bei jedem Klick stocken. " +
-              "Du kannst erst in Ruhe Größen ausprobieren und dann berechnen.</p>" +
-              '<button type="button" class="bk-cr-stale-go">Mosaik neu berechnen</button>' +
+              '<span class="bk-cr-spinner" aria-hidden="true"></span>' +
+              "<b>Mosaik wird berechnet</b>" +
+              '<p id="bk-cr-busy-sub">Einen Moment — die Noppen werden neu gesetzt.</p>' +
             "</div>";
-        view.appendChild(stale);
-        stale.querySelector(".bk-cr-stale-go").addEventListener("click", function () { recalc(); });
-        function markStale(on) {
-            stale.hidden = !on;
+        view.appendChild(overlay);
+        function showBusy(on) {
+            overlay.hidden = !on;
             view.classList.toggle("is-stale", !!on);
+            if (on) {
+                var sub = document.getElementById("bk-cr-busy-sub");
+                if (sub) {
+                    sub.textContent = document.getElementById("width-slider").value + " × " +
+                        document.getElementById("height-slider").value + " Noppen werden gesetzt.";
+                }
+            }
         }
 
         var shownArea = null, currentTab = "size";
         function lift(area) {
             if (!area || area === shownArea) return;
             if (shownArea) attic.appendChild(shownArea);
-            view.insertBefore(area, stale);
+            view.insertBefore(area, overlay);
             area.style.display = "";
             shownArea = area;
             applyZoom();
@@ -143,7 +150,7 @@
                 if (wasCrop) unfixCropper();
                 lift(bestArea());
                 // Leaving the crop tab: the cut changed, so the mosaic must follow.
-                if (wasCrop) maybeAutoRecalc(true);
+                if (wasCrop) maybeAutoRecalc();
             }
         };
         setInterval(function () { if (currentTab !== "crop") lift(bestArea()); }, 900);
@@ -158,21 +165,18 @@
             var b = nextButton();
             if (!b) return;
             busy.classList.add("on");
+            showBusy(true);
             b.click();
             // The pipeline is async and yields paint frames; watch for a result.
             var tries = 0;
             var poll = setInterval(function () {
                 tries++;
                 var done = !document.querySelector(".show-spinner");
-                if (done || tries > 240) { clearInterval(poll); busy.classList.remove("on"); clearRecalcHint(); }
+                if (done || tries > 240) { clearInterval(poll); busy.classList.remove("on"); showBusy(false); }
             }, 500);
         }
         document.getElementById("bk-cr-recalc").addEventListener("click", recalc);
 
-        function studs() {
-            return (+document.getElementById("width-slider").value) *
-                   (+document.getElementById("height-slider").value);
-        }
         /** Small mosaics may recompute on their own; big ones wait for a click. */
         function maybeAutoRecalc(force) {
             clearTimeout(recalcTimer);
@@ -288,7 +292,7 @@
             var b = el("button", "bk-cr-cropbtn", C.svg(t[1]) + "<span>" + t[0] + "</span>");
             b.type = "button";
             b.addEventListener("click", function () {
-                if (t[2]) { var cr = cropper(); if (cr) { t[2](cr); markStale(true); } }
+                if (t[2]) { var cr = cropper(); if (cr) { t[2](cr); } }
                 else { var pick = document.getElementById("image-input-new"); if (pick) { var real = pick.querySelector("button,input,label") || pick; real.click(); } }
             });
             cropBtns.appendChild(b);

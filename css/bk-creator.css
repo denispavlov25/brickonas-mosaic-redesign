@@ -273,11 +273,10 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     .bk-cr-chip u { display: none; }
 }
 
-/* ---------------------------------------------------- stale preview -----
-   When the configuration changed but the mosaic was not recomputed (large
-   mosaics do not recompute on their own), say so ON the picture rather than
-   in a corner button nobody notices. Non-modal on purpose: the customer can
-   keep trying sizes and only compute when they have decided. */
+/* --------------------------------------------------- busy overlay -------
+   Everything recomputes automatically, so the only thing the customer needs
+   is reassurance that the roughly two-second wait is work, not a freeze. The
+   message sits ON the picture, where the change is expected. */
 .bk-cr-view { position: relative; }
 .bk-cr-view.is-stale canvas[id$="-upscaled"] { filter: grayscale(.55) opacity(.42); }
 .bk-cr-stale {
@@ -292,8 +291,13 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     box-shadow: 0 12px 34px rgba(26,42,27,.18);
 }
 .bk-cr-stale-card b { display: block; font-family: var(--bk-font-heading,'Fredoka',sans-serif);
-    font-size: 1.04rem; font-weight: 600; margin-bottom: 6px; }
-.bk-cr-stale-card p { margin: 0 0 14px; font-size: .8rem; line-height: 1.5; color: var(--c-ink-soft); }
+    font-size: 1.04rem; font-weight: 600; margin-bottom: 5px; }
+.bk-cr-stale-card p { margin: 0; font-size: .8rem; line-height: 1.5; color: var(--c-ink-soft); }
+.bk-cr-spinner {
+    display: block; width: 28px; height: 28px; margin: 0 auto 12px;
+    border-radius: 50%; border: 3px solid #CBE3CC; border-top-color: var(--c-accent);
+    animation: bkspin .8s linear infinite;
+}
 .bk-cr-stale-go {
     display: inline-flex; align-items: center; gap: 8px;
     background: var(--c-accent); color: #fff; border: 0;
