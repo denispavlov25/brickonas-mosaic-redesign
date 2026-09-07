@@ -330,3 +330,19 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
     background: #EAF4EA; border: 1px solid #CBE3CC;
     font-size: .77rem; line-height: 1.45; color: #23561F;
 }
+
+/* ------------------------------------------------- embedded in the shop ---
+   On brickonas.info the configurator lives in an iframe whose height the parent
+   page derives from the CONTENT height. A position:fixed editor has virtually no
+   content height, so the iframe would collapse to its 600 px minimum and squash
+   the editor. Inside the frame (the app sets html.bk-embedded itself) lay the
+   editor out normally with a definite height instead. */
+html.bk-embedded body.bk-creator { overflow: visible; }
+html.bk-embedded body.bk-creator .bk-cr-root {
+    position: static;
+    height: 820px;
+    min-height: 820px;
+}
+html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
+    max-height: 560px;   /* the viewport cap means nothing inside a frame */
+}

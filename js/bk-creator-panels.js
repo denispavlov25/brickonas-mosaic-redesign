@@ -443,11 +443,30 @@
         setTimeout(function () { if (!hasContent("step-3")) recalc(); }, 400);
     }
 
-    // The wizard reveals #step-navigation exactly when an image has been loaded
-    // and processing has begun — the cleanest available "we have a picture" flag.
+    /**
+     * "The customer has a picture" — tested WITHOUT touching layout. offsetParent
+     * was the obvious check but it is null whenever the document is not being
+     * laid out, which is exactly the case inside an iframe on a page the browser
+     * is not painting; the editor then never mounted on the shop page. Resolved
+     * style plus the canvas size work regardless.
+     */
+    /** display:none on an ANCESTOR leaves the element's own computed display
+     *  untouched, so the whole chain has to be walked. */
+    function hiddenByAnyAncestor(el) {
+        for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+            var st = getComputedStyle(n);
+            if (st.display === "none" || st.visibility === "hidden") return true;
+        }
+        return false;
+    }
+    function hasImage() {
+        var c = document.getElementById("step-1-canvas-upscaled");
+        if (!c || c.width <= 300) return false;   // still the untouched default canvas
+        var ex = document.getElementById("mosaic-examples");
+        return !ex || hiddenByAnyAncestor(ex);    // upload card gone = a picture is in
+    }
     function waitForImage() {
-        var nav = document.getElementById("step-navigation");
-        if (nav && nav.offsetParent !== null) { boot(); return; }
+        if (hasImage()) { boot(); return; }
         setTimeout(waitForImage, 200);
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", waitForImage);
