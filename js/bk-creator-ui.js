@@ -2,22 +2,22 @@
  * BRICKONAS Creator — single-screen editor shell (opt-in via ?ui=new).
  *
  * WHY: the classic three-step wizard hides the mosaic behind "Weiter" buttons,
- * scatters related controls across steps, and never shows the customer what the
- * thing will cost until the end. This shell keeps the mosaic on screen the whole
- * time, puts the live size and price in the header, and groups the controls into
- * tabs — the shape of editor customers already know from comparable tools.
+ * scatters related controls across steps, and never shows the price until the
+ * end. This shell keeps the mosaic on screen throughout and puts size and price
+ * in the header.
  *
- * HOW (important): it does NOT reimplement any control. It MOVES the existing
- * DOM nodes into the new panels. Moving a node keeps its event listeners, so
- * every handler in index.js keeps working and getElementById() still finds
- * everything. Anything not shown is parked in an off-screen "attic" rather than
+ * The LAYOUT is deliberately ours: a vertical tool rail on the far left, an
+ * asymmetric header (identity left, facts and action right) and canvas controls
+ * docked in a bar above the stage — not the horizontal tab strip and floating
+ * zoom pill of the tool that inspired the idea.
+ *
+ * HOW: it does not reimplement any control. It MOVES the existing DOM nodes
+ * into its panels, which keeps every listener in index.js alive and leaves
+ * getElementById() working. Anything not shown is parked off-screen, never
  * removed, for the same reason.
- *
- * The classic UI is untouched and stays the default.
  */
 (function () {
     "use strict";
-
     if (!/[?&]ui=new\b/.test(window.location.search)) return;
 
     var ICON = {
@@ -31,7 +31,10 @@
         square:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
         land:  '<rect x="3" y="7" width="18" height="10" rx="2"/>',
         port:  '<rect x="7" y="3" width="10" height="18" rx="2"/>',
-        custom:'<path d="M4 20V8m0 12h12"/><path d="M9 15l6-6"/><path d="M20 4l-4 1 3 3z"/>'
+        pen:   '<path d="M15.5 3.5l5 5L8 21H3v-5z"/>',
+        fill:  '<path d="M8 3l9 9-7 7-9-9z"/><path d="M20 15c0 1.7-1.3 3-3 3"/>',
+        swap:  '<path d="M4 7h13l-3-3M20 17H7l3 3"/>',
+        pick:  '<path d="M18 3l3 3-9 9-3-3z"/><path d="M9 12l-6 6v3h3l6-6"/>'
     };
     function svg(d) {
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + "</svg>";
@@ -43,61 +46,53 @@
         return n;
     }
 
-    // Tabs. `accent`/`soft` tint the whole panel so each area reads distinctly,
-    // the way the reference tool does — but in BRICKONAS colours.
     var TABS = [
-        { id: "size",   label: "Größe",     icon: ICON.size,   accent: "#2E7D32", soft: "#E8F2E8" },
-        { id: "crop",   label: "Zuschnitt", icon: ICON.crop,   accent: "#2E7D32", soft: "#E8F2E8" },
-        { id: "color",  label: "Farben",    icon: ICON.color,  accent: "#C62828", soft: "#FBEAEA" },
-        { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: "#C62828", soft: "#FBEAEA" },
-        { id: "ai",     label: "KI",        icon: ICON.ai,     accent: "#6A4C93", soft: "#F0EBF7" },
-        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#E08A00", soft: "#FDF3E0" },
-        { id: "depth",  label: "Tiefe",     icon: ICON.depth,  accent: "#2E7D32", soft: "#E8F2E8" }
+        { id: "size",   label: "Größe",     icon: ICON.size,   accent: "#2E7D32", soft: "#EAF4EA" },
+        { id: "crop",   label: "Zuschnitt", icon: ICON.crop,   accent: "#2E7D32", soft: "#EAF4EA" },
+        { id: "color",  label: "Farben",    icon: ICON.color,  accent: "#B03A2E", soft: "#FBEDEB" },
+        { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: "#B03A2E", soft: "#FBEDEB" },
+        { id: "ai",     label: "KI",        icon: ICON.ai,     accent: "#5B4B8A", soft: "#F0ECF7" },
+        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" },
+        { id: "depth",  label: "Tiefe",     icon: ICON.depth,  accent: "#2E7D32", soft: "#EAF4EA" }
     ];
 
-    var root, attic, panels = {}, stage, headSize, headPrice, headStuds;
+    var root, attic, panels = {}, view, stagebar, chips = {};
 
-    /** Move a node (and its listeners) into `target`. Silent if it is missing. */
-    function move(node, target) {
-        if (!node || !target) return null;
-        target.appendChild(node);
-        return node;
-    }
-    function q(sel) { return document.querySelector(sel); }
-
-    /* --------------------------------------------------------------- shell */
     function buildShell() {
         attic = el("div", "bk-cr-attic");
         document.body.appendChild(attic);
-
         root = el("div", "bk-cr-root");
 
+        /* header: identity left, facts + action right */
         var head = el("div", "bk-cr-head");
-        var back = el("button", "bk-cr-back", "&larr; Zurück");
+        var back = el("button", "bk-cr-back", "&larr;");
         back.type = "button";
+        back.title = "Zurück zur klassischen Ansicht";
         back.addEventListener("click", function () {
             var u = new URL(window.location.href);
             u.searchParams.delete("ui");
             window.location.href = u.toString();
         });
+        var mark = el("div", "bk-cr-wordmark", "Mosaik-Editor<small>BRICKONAS BrickPic</small>");
         var meta = el("div", "bk-cr-meta");
-        headSize  = el("span", "bk-cr-size", "—");
-        headPrice = el("span", "bk-cr-price", "");
-        headStuds = el("span", "bk-cr-studs", "");
-        meta.append(headSize, headPrice, headStuds);
+        chips.size  = el("div", "bk-cr-chip", "<u>Format</u><b>—</b>");
+        chips.studs = el("div", "bk-cr-chip", "<u>Noppen</u><b>—</b>");
+        chips.price = el("div", "bk-cr-chip bk-cr-chip--price", "<u>Preis</u><b>—</b>");
+        meta.append(chips.size, chips.studs, chips.price);
         var finish = el("button", "bk-cr-finish", "Fertig &rarr;");
         finish.type = "button";
         finish.addEventListener("click", function () {
-            var card = document.getElementById("mosaic-product-card");
-            if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); }
+            if (typeof window.bkCrFinish === "function") window.bkCrFinish();
         });
-        head.append(back, meta, finish);
+        head.append(back, mark, meta, finish);
 
+        /* body: rail | panel | stage */
         var main = el("div", "bk-cr-main");
-        var side = el("div", "bk-cr-side");
-        var rail = el("div", "bk-cr-tabs");
+        var rail = el("div", "bk-cr-rail");
         rail.setAttribute("role", "tablist");
+        var side = el("div", "bk-cr-side");
         var body = el("div", "bk-cr-panels");
+        side.appendChild(body);
 
         TABS.forEach(function (t, i) {
             var b = el("button", "bk-cr-tab", svg(t.icon) + "<span>" + t.label + "</span>");
@@ -117,39 +112,41 @@
             panels[t.id] = p;
         });
 
-        side.append(rail, body);
-        stage = el("div", "bk-cr-stage");
-        main.append(side, stage);
+        var stage = el("div", "bk-cr-stage");
+        stagebar = el("div", "bk-cr-stagebar");
+        view = el("div", "bk-cr-view");
+        stage.append(stagebar, view);
+
+        main.append(rail, side, stage);
         root.append(head, main);
         document.body.appendChild(root);
         document.body.classList.add("bk-creator");
     }
 
     function select(id) {
+        var tabs = root.querySelectorAll(".bk-cr-tab");
         TABS.forEach(function (t, i) {
-            var tab = root.querySelectorAll(".bk-cr-tab")[i];
-            tab.setAttribute("aria-selected", t.id === id ? "true" : "false");
+            tabs[i].setAttribute("aria-selected", t.id === id ? "true" : "false");
             panels[t.id].hidden = t.id !== id;
         });
-        root.style.setProperty("--tab-accent", (TABS.find(function (t) { return t.id === id; }) || {}).accent);
         if (typeof window.bkCrShowStage === "function") window.bkCrShowStage(id);
     }
 
-    /** Panel heading: title, help affordance, optional undo. */
-    function heading(panel, title, help) {
-        var h = el("h2", "bk-cr-ptitle");
-        h.append(document.createTextNode(title));
-        var i = el("span", "bk-cr-help", "?");
-        i.title = help || "";
-        h.appendChild(i);
-        panel.appendChild(h);
-        return h;
+    /** Panel heading: coloured stud, title, optional sub-line. */
+    function heading(panel, title, sub) {
+        panel.appendChild(el("h2", "bk-cr-ptitle", title));
+        if (sub) panel.appendChild(el("p", "bk-cr-psub", sub));
     }
 
-    window.BkCreator = { buildShell: buildShell, select: select, heading: heading,
-                         move: move, el: el, q: q, svg: svg, ICON: ICON,
-                         panels: function () { return panels; },
-                         attic: function () { return attic; },
-                         stage: function () { return stage; },
-                         head: function () { return { size: headSize, price: headPrice, studs: headStuds }; } };
+    window.BkCreator = {
+        buildShell: buildShell, select: select, heading: heading,
+        el: el, svg: svg, ICON: ICON,
+        q: function (s) { return document.querySelector(s); },
+        move: function (node, target) { if (node && target) target.appendChild(node); return node; },
+        panels: function () { return panels; },
+        attic:  function () { return attic; },
+        view:   function () { return view; },
+        stagebar: function () { return stagebar; },
+        chips:  function () { return chips; }
+    };
 })();
