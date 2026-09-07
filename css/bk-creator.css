@@ -340,9 +340,11 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 html.bk-embedded body.bk-creator { overflow: visible; }
 html.bk-embedded body.bk-creator .bk-cr-root {
     position: static;
-    height: 820px;
-    min-height: 820px;
+    /* 100vh inside a frame is the frame's own height: full window when the shop
+       opens it full-screen, a sensible block when it is inline. */
+    height: 100vh;
+    min-height: 620px;
 }
 html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
-    max-height: 560px;   /* the viewport cap means nothing inside a frame */
+    max-height: max(240px, calc(100vh - 190px));
 }
