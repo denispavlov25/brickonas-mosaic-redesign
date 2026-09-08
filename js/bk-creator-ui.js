@@ -93,10 +93,10 @@
         var side = el("div", "bk-cr-side");
         // Phones only: the sheet opens to nearly full height, because 42vh is
         // not enough room to pick a size or type into the AI chat.
-        sheetBtn = el("button", "bk-cr-grab", "<i></i><span>Mehr anzeigen</span>");
+        sheetBtn = el("button", "bk-cr-grab", '<i></i><b class="bk-cr-grabtitle"></b><span>Schließen</span>');
         sheetBtn.type = "button";
         sheetBtn.setAttribute("aria-expanded", "false");
-        sheetBtn.addEventListener("click", function () { toggleSheet(); });
+        sheetBtn.addEventListener("click", function () { closeSheets(); });
         var body = el("div", "bk-cr-panels");
         // The order card lives in a footer that does NOT scroll: price and
         // "Bestellen" stay in view while the size list above is scrolled.
@@ -193,14 +193,28 @@
         });
     }
 
-    /* ------------------------------------------------------- mobile sheet */
+    /* ------------------------------------------------------- mobile sheet
+       On a phone the picture is the default state and gets the whole screen; a
+       tool opens a sheet only as tall as its content needs, and the sheet is
+       dismissed explicitly. A panel that is permanently open costs half the
+       screen even while the customer is only looking at their mosaic. */
     function toggleSheet(force) {
         var open = typeof force === "boolean" ? force : !document.body.classList.contains("bk-cr-sheet");
         document.body.classList.toggle("bk-cr-sheet", open);
-        if (sheetBtn) {
-            sheetBtn.setAttribute("aria-expanded", open ? "true" : "false");
-            sheetBtn.querySelector("span").textContent = open ? "Bild zeigen" : "Mehr anzeigen";
-        }
+        if (open) document.body.classList.remove("bk-cr-order");
+        if (sheetBtn) sheetBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    /** "Fertig" on a phone: the order card gets the sheet to itself. */
+    function orderSheet(open) {
+        if (sheetBtn) sheetBtn.querySelector(".bk-cr-grabtitle").textContent = "Bestellen";
+        document.body.classList.toggle("bk-cr-order", open !== false);
+        if (open !== false) document.body.classList.remove("bk-cr-sheet");
+    }
+
+    function closeSheets() {
+        document.body.classList.remove("bk-cr-sheet", "bk-cr-order");
+        if (sheetBtn) sheetBtn.setAttribute("aria-expanded", "false");
     }
 
     function select(id, fromUser) {
@@ -210,6 +224,10 @@
             panels[t.id].hidden = t.id !== id;
         });
         if (typeof window.bkCrShowStage === "function") window.bkCrShowStage(id);
+        // The sheet header carries the title on a phone, so the panel's own
+        // heading can step aside instead of repeating the tab underneath it.
+        var meta = TABS.find(function (t) { return t.id === id; });
+        if (sheetBtn && meta) sheetBtn.querySelector(".bk-cr-grabtitle").textContent = meta.label;
         // On a phone a TAP on a tool is a request to see that tool -- but the
         // select() that runs while the shell is built is not, and opening the
         // sheet there left the picture 53 px tall before anyone had asked.
@@ -233,6 +251,8 @@
         stagebar: function () { return stagebar; },
         foot:   function () { return foot; },
         sheet:  toggleSheet,
+        order:  orderSheet,
+        isPhone: function () { return window.matchMedia("(max-width: 940px)").matches; },
         chips:  function () { return chips; }
     };
 })();

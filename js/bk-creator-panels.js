@@ -220,6 +220,9 @@
 
         window.bkCrFinish = function () {
             if (!parkOrderCard()) { recalc(); return; }
+            // On a phone the order card is a sheet of its own -- keeping it
+            // permanently below the controls ate 221 px of a 614 px sheet.
+            if (C.isPhone()) { C.order(true); return; }
             var btn = document.getElementById("order-mosaic-button");
             if (btn) { btn.classList.add("bk-cr-pulse"); setTimeout(function () { btn.classList.remove("bk-cr-pulse"); }, 1400); }
         };

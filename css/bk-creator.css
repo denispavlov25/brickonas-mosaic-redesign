@@ -300,78 +300,110 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 
 /* -------------------------------------------------------- responsive */
 /* ------------------------------------------------------------ phone layout
-   The old version squeezed the controls into a 42vh strip between two bars,
-   which left roughly 250 px for a size list, a colour grid or the AI chat --
-   unusable, and the text was below 14 px on top of that.
+   The picture is the default state and gets the whole screen. A tool opens a
+   sheet only as tall as its content needs; it is dismissed explicitly, and the
+   order card gets a sheet of its own instead of sitting under the controls for
+   ever. The tool bar lives at the BOTTOM, in thumb reach.
 
-   Now: picture first, controls as a sheet that opens to nearly full height,
-   and the tool bar at the BOTTOM where a thumb reaches it. Every target is at
-   least 48 px, which is the accessibility floor for touch. */
+   The version before this kept the panel permanently open at 44vh and the order
+   footer inside it: 221 px of a 614 px sheet went to a price the customer only
+   needs at the end, and the mosaic never got more than a third of the screen. */
 @media (max-width: 940px) {
     body.bk-creator { --c-rail: auto; --c-panelw: 100% !important; }
     .bk-cr-main {
         grid-template-columns: 1fr;
         /* minmax(0, 1fr), not 1fr: a plain fr track keeps an automatic minimum
-           the size of its content, so the picture refused to give up 340 px and
-           the sheet could never grow past its closed height. */
+           the size of its content, so the picture would refuse to shrink and
+           the sheet could never open. */
         grid-template-rows: minmax(0, 1fr) auto auto;
         grid-template-areas: "stage" "side" "rail";
     }
     .bk-cr-grip { display: none; }
 
     .bk-cr-stage { min-height: 0; overflow: hidden; }
-    .bk-cr-view { min-height: 0; }
-    .bk-cr-view { padding: 10px; }
+    .bk-cr-view { min-height: 0; padding: 10px; }
     .bk-cr-view canvas[id$="-upscaled"] { max-height: 100%; object-fit: contain; }
 
-    /* the sheet */
+    /* ---- the sheet: closed by default, as tall as it needs when open ---- */
     .bk-cr-side {
-        border-right: 0; border-top: 1px solid var(--c-line);
-        border-radius: 16px 16px 0 0; box-shadow: 0 -6px 22px rgba(26,42,27,.10);
-        grid-template-rows: auto 1fr auto;
-        height: 44vh; transition: height .22s ease;
-        /* Even fully open the picture keeps a strip: a control panel that hides
-           what it is controlling is worse than a small one. */
-        max-height: calc(100vh - 230px);
-        max-height: calc(100dvh - 230px);
+        height: 0; overflow: hidden; border-right: 0; border-top: 0;
+        grid-template-rows: auto auto auto;
     }
-    body.bk-cr-sheet .bk-cr-side { height: 76vh; }
+    body.bk-cr-sheet .bk-cr-side,
+    body.bk-cr-order .bk-cr-side {
+        height: auto;
+        max-height: min(62vh, calc(100vh - 250px));
+        max-height: min(62vh, calc(100dvh - 250px));
+        border-top: 1px solid var(--c-line);
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -8px 26px rgba(26,42,27,.13);
+    }
+    body.bk-cr-order .bk-cr-panels { display: none; }
+    .bk-cr-foot { display: none; max-height: none; }
+    body.bk-cr-order .bk-cr-foot { display: block; }
 
     .bk-cr-grab {
-        display: flex; align-items: center; justify-content: center; gap: 9px;
-        width: 100%; min-height: 44px; padding: 8px 12px 6px;
+        display: none; position: relative; align-items: center; justify-content: flex-end;
+        width: 100%; min-height: 48px; padding: 12px 16px 8px;
         background: none; border: 0; border-bottom: 1px solid var(--c-line);
-        cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700;
-        color: var(--c-ink-soft);
+        cursor: pointer; font: inherit; font-size: .88rem; font-weight: 800;
+        color: var(--c-accent-d);
     }
-    .bk-cr-grab i { width: 38px; height: 4px; border-radius: 2px; background: var(--c-line-2); }
+    body.bk-cr-sheet .bk-cr-grab, body.bk-cr-order .bk-cr-grab { display: flex; }
+    .bk-cr-grab i {
+        position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
+        width: 42px; height: 4px; border-radius: 2px; background: var(--c-line-2);
+    }
+    .bk-cr-grab span::after { content: " \2713"; }
+    .bk-cr-grabtitle {
+        margin-right: auto;
+        font-family: var(--bk-font-heading, 'Fredoka', sans-serif);
+        font-size: 1.05rem; font-weight: 600; color: var(--c-ink);
+    }
+    /* the sheet header says it now */
+    body.bk-cr-sheet .bk-cr-panel:not([hidden]) > .bk-cr-ptitle { display: none; }
 
-    /* tool bar at the bottom, in thumb reach */
+    /* The busy state already sits ON the picture; in the bar it only got cut
+       off at the right edge. */
+    .bk-cr-stagebar .bk-cr-busy { display: none !important; }
+
+    /* ---- sizes as a swipe strip, not a tall list ---- */
+    .bk-cr-sizes {
+        display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 8px;
+        scroll-snap-type: x mandatory; scrollbar-width: none;
+    }
+    .bk-cr-sizes::-webkit-scrollbar { display: none; }
+    .bk-cr-size-card {
+        flex: 0 0 258px; scroll-snap-align: start;
+        grid-template-columns: 42px 1fr; padding: 11px 12px; min-height: 62px;
+    }
+    /* Nothing here may wrap -- at 224 px the price dropped onto its own line
+       and the plate/stud line onto a third, and the strip lost its rhythm. */
+    .bk-cr-size-top { flex-wrap: nowrap; }
+    .bk-cr-size-cm, .bk-cr-size-price { font-size: .92rem; }
+    .bk-cr-size-sub { font-size: .74rem; white-space: nowrap; }
+
+    /* ---- tool bar at the bottom, in thumb reach ---- */
     .bk-cr-rail {
         flex-direction: row; overflow-x: auto; gap: 2px;
         border-right: 0; border-top: 1px solid var(--c-line);
         padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
     }
-    .bk-cr-tab { flex: 1 0 auto; min-width: 62px; min-height: 52px; font-size: .72rem; }
+    .bk-cr-tab { flex: 1 0 auto; min-width: 62px; min-height: 54px; font-size: .72rem; }
     .bk-cr-tab svg { width: 23px; height: 23px; }
     .bk-cr-tab[aria-selected="true"]::after { bottom: 1px; }
 
-    /* readable and tappable: nothing below 14 px, no target under 48 px */
-    .bk-cr-panels { padding: 14px 16px 26px; }
+    /* ---- readable and tappable: nothing under 14 px, no target under 48 px ---- */
+    .bk-cr-panels { padding: 14px 16px 22px; }
     .bk-cr-psub, .bk-cr-hint, .bk-cr-note { font-size: .88rem; }
-    .bk-cr-size-card { padding: 11px 12px; min-height: 60px; }
-    .bk-cr-size-cm, .bk-cr-size-price { font-size: 1rem; }
-    .bk-cr-size-sub { font-size: .82rem; }
     .bk-cr-shape { min-height: 52px; font-size: .8rem; }
     .bk-cr-sw { min-height: 44px; }
     .bk-cr-step { width: 40px; height: 40px; }
     .bk-cr-row { grid-template-columns: 40px 1fr 40px; }
     .bk-cr-root input[type="range"] { height: 34px; }
     .bk-cr-undo { min-height: 40px; font-size: .82rem; }
-    .bk-cr-foot { max-height: none; }
 
     .bk-cr-wordmark small { display: none; }
-    .bk-cr-chip u { display: none; }
     .bk-cr-finish { padding: 11px 15px; }
 }
 
@@ -400,8 +432,7 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
        controls the customer actually came for. The stud/piece chips repeat what
        the size list and the header chip already say, so on a phone the footer is
        one row: price, then the button. */
-    .bk-cr-foot .mosaic-product-card { padding: 10px 14px 12px; }
-    .bk-cr-foot .mosaic-product-meta { display: none; }
+    .bk-cr-foot .mosaic-product-card { padding: 12px 16px 16px; }
     .bk-cr-foot .mosaic-add-to-cart-btn { flex: 1 1 auto; justify-content: center; min-height: 48px; }
     .bk-cr-foot .mosaic-product-price { font-size: 1.25rem; }
     .bk-cr-foot .mosaic-order-hint { margin-top: 8px; font-size: .7rem; line-height: 1.35; }
