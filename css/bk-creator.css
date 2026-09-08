@@ -412,6 +412,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     .bk-cr-row { grid-template-columns: 40px 1fr 40px; }
     .bk-cr-root input[type="range"] { height: 34px; }
     .bk-cr-undo { min-height: 40px; font-size: .82rem; }
+    /* the sheet is content-sized, so here the log keeps a sensible fixed window */
+    body.bk-creator .bk-cr-panel[data-tab="ai"] { min-height: 0; }
+    body.bk-creator .bk-ai-chat-log { min-height: 150px; max-height: clamp(180px, 30vh, 300px); }
 
     .bk-cr-wordmark small { display: none; }
     .bk-cr-finish { padding: 11px 15px; }
@@ -505,7 +508,7 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 .bk-cr-primary:hover { background: #35913A; }
 .bk-cr-primary:active { transform: translateY(2px); box-shadow: none; }
 .bk-cr-note {
-    margin: 0 0 13px; padding: 10px 12px; border-radius: 10px;
+    margin: 0 0 10px; padding: 8px 11px; border-radius: 10px;
     background: #EAF4EA; border: 1px solid #CBE3CC;
     font-size: .77rem; line-height: 1.45; color: #23561F;
 }
@@ -571,17 +574,33 @@ html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
    the tab's accent colour, the same card and button shapes as Grösse and Malen,
    and no colour that is not already in the shop. */
 .bk-cr-glabel {
-    margin: 18px 0 8px; font-size: .72rem; font-weight: 800;
+    margin: 14px 0 7px; font-size: .72rem; font-weight: 800;
     letter-spacing: .07em; text-transform: uppercase; color: var(--c-ink-soft);
 }
 .bk-cr-glabel:first-of-type { margin-top: 4px; }
 /* label left, the action that belongs to the group right */
 .bk-cr-grow { display: flex; align-items: center; gap: 10px; }
-.bk-cr-grow .bk-cr-glabel { margin: 18px 0 8px; }
+.bk-cr-grow .bk-cr-glabel { margin: 14px 0 7px; }
 .bk-cr-grow > :last-child { margin-left: auto; }
 
+/* The AI panel is a column that fills the side panel, so the conversation
+   claims whatever height is left instead of hugging a single greeting. */
+body.bk-creator .bk-cr-panel[data-tab="ai"] { display: flex; flex-direction: column; min-height: 100%; }
+/* A sticky bottom sticks to the scrollport's PADDING edge, so the panel's
+   bottom padding left a band in which the conversation was still visible
+   underneath the input bar. On this tab the bar is the bottom. */
+body.bk-creator .bk-cr-panels:has(.bk-cr-panel[data-tab="ai"]:not([hidden])) { padding-bottom: 0; }
+body.bk-creator .bk-ai-tools { flex: 1 1 auto; min-height: 0; }
+body.bk-creator .bk-ai-chat { flex: 1 1 auto; min-height: 0; }
+body.bk-creator .bk-ai-chat-log { flex: 1 1 auto; }
+
 body.bk-creator .bk-ai-tools {
-    display: block; background: none !important; border: 0 !important;
+    display: flex !important; flex-direction: column;
+    /* The app sets overflow:hidden here. Any ancestor with a non-visible
+       overflow becomes the sticky container, so the input field stuck to the
+       bottom of THIS box -- which is off-screen -- instead of to the panel. */
+    overflow: visible !important;
+    background: none !important; border: 0 !important;
     border-radius: 0 !important; padding: 0 !important; margin: 0 !important;
     box-shadow: none !important;
 }
@@ -630,29 +649,40 @@ body.bk-creator .bk-ai-swatches { margin-top: 12px; }
 body.bk-creator .bk-ai-swatch-label { font-size: .78rem; font-weight: 700; color: var(--c-ink-soft); }
 
 /* free-text field: one bordered box, always open */
-/* Input first, conversation below it. A log above the field pushed the field
-   itself off the bottom of the panel -- and this is a command box, not a
-   messenger: the thing you type in has to be the thing you see. */
+/* A real chat area, not a three-line strip. The conversation reads in the
+   normal order again -- log above, field below -- and the field is stuck to the
+   bottom of the panel viewport while the box extends past it, so it can never
+   scroll out of reach the way it did when it simply sat at the end. */
 body.bk-creator .bk-ai-chat {
-    display: flex; flex-direction: column-reverse; gap: 9px;
+    display: flex; flex-direction: column; gap: 9px;
     margin: 0 0 4px; padding: 9px;
     background: var(--c-bg) !important; border: 1px solid var(--c-line) !important;
     border-radius: 12px !important;
 }
 body.bk-creator .bk-ai-chat-log {
-    /* Short on purpose: the input must stay above the fold, otherwise the one
-       control this section exists for is the one nobody sees. */
-    max-height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    /* Grows with the conversation up to a real window; the sticky field below
+       means height here costs nothing. */
+    min-height: 168px;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
     margin: 0; font-size: .82rem; line-height: 1.45;
 }
 body.bk-creator .bk-ai-msg { max-width: 92%; }
 body.bk-creator .bk-ai-msg.bot { background: #EAF4EA !important; color: var(--c-ink) !important; }
 body.bk-creator .bk-ai-msg.user { background: var(--c-accent) !important; color: #fff !important; }
 body.bk-creator .bk-ai-chat-log:empty { display: none; }
-body.bk-creator .bk-ai-chat-form { display: flex; gap: 7px; }
+body.bk-creator .bk-ai-chat-form {
+    display: flex; gap: 7px;
+    position: sticky; bottom: 0; z-index: 1;
+    /* Negative side margins so the bar's background covers the box's padding
+       gutters -- otherwise the conversation scrolls visibly past its edges. */
+    margin: 0 -9px -9px; padding: 9px;
+    background: var(--c-bg);
+    border-top: 1px solid var(--c-line);
+    border-radius: 0 0 11px 11px;
+}
 body.bk-creator .bk-ai-chat-input {
-    flex: 1 1 auto; min-width: 0; min-height: 44px;
-    padding: 10px 12px; font: inherit; font-size: .88rem;
+    flex: 1 1 auto; min-width: 0; min-height: 46px;
+    padding: 11px 13px; font: inherit; font-size: .9rem;
     background: var(--c-panel) !important; color: var(--c-ink) !important;
     border: 1.5px solid var(--c-line) !important; border-radius: 9px !important;
 }
@@ -660,7 +690,7 @@ body.bk-creator .bk-ai-chat-input:focus {
     outline: none; border-color: var(--tab-accent, var(--c-accent)) !important;
 }
 body.bk-creator .bk-ai-chat-send {
-    flex: 0 0 44px; width: 44px; height: 44px; display: grid; place-items: center;
+    flex: 0 0 46px; width: 46px; height: 46px; display: grid; place-items: center;
     border: 0 !important; border-radius: 9px !important; cursor: pointer;
     background: var(--tab-accent, var(--c-accent)) !important; color: #fff !important;
 }

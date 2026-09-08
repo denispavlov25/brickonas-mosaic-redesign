@@ -460,7 +460,7 @@
         }
 
         /* --------------------------------------------------------- KI tab */
-        C.heading(P.ai, "KI-Werkzeuge", "Automatisch aufbereiten, freistellen, Stile anwenden.");
+        C.heading(P.ai, "KI-Werkzeuge", "Aufbereiten, freistellen — oder frei beschreiben.");
         move(q("#bk-ai-tools") || q(".bk-ai-tools"), P.ai);
         restructureAi();
 
@@ -479,12 +479,12 @@
             // keeping -- as the panel's own note, not as a card headline.
             var head = tools.querySelector(".bk-ai-head");
             if (head) {
-                var desc = head.querySelector("span");
-                if (desc) {
-                    var note = el("p", "bk-cr-note");
-                    note.textContent = desc.textContent;
-                    tools.insertBefore(note, tools.firstChild);
-                }
+                // The app's wording runs to three lines here; the promise that
+                // matters is the second half of it, and every line spent above
+                // the conversation is a line the conversation does not get.
+                var note = el("p", "bk-cr-note",
+                    "Alles passiert in deinem Browser — dein Bild wird nicht hochgeladen.");
+                tools.insertBefore(note, tools.firstChild);
                 head.remove();
             }
 
