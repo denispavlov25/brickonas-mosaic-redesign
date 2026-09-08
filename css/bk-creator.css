@@ -665,3 +665,37 @@ body.bk-creator .bk-ai-chat-send {
     background: var(--tab-accent, var(--c-accent)) !important; color: #fff !important;
 }
 body.bk-creator .bk-ai-chat-send:hover { filter: brightness(.93); }
+
+
+/* ========================================================== Stil presets ===
+   The app renders these tiles with a live preview canvas; only their dress
+   changes here so they read as part of the panel. Five fixed columns were far
+   too tight in a 360 px panel, so the grid fills instead. */
+body.bk-creator #bk-style-picker { display: block; margin: 0 0 4px; }
+body.bk-creator .bk-style-picker-label { display: none; }
+body.bk-creator .bk-style-picker-grid {
+    display: grid !important;
+    /* Three fixed columns: five tiles then read as 3 + 2. Letting them fill
+       gave 4 + 1, and five columns in a 360 px panel left a 47 px preview --
+       too small to tell Vintage from Warm, which is the tile's whole job. */
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+}
+body.bk-creator .bk-style-tile {
+    border: 1.5px solid var(--c-line) !important; border-radius: 11px !important;
+    background: var(--c-panel) !important; padding: 5px 5px 4px; overflow: hidden;
+    display: grid; gap: 4px; cursor: pointer;
+    transition: border-color .16s ease, background .16s ease;
+}
+body.bk-creator .bk-style-tile:hover { border-color: var(--c-line-2) !important; background: #FAFCFA !important; }
+body.bk-creator .bk-style-tile.active {
+    border-color: var(--c-accent) !important; background: #EAF4EA !important;
+}
+body.bk-creator .bk-style-tile-preview {
+    width: 100%; aspect-ratio: 1; display: block; border-radius: 7px;
+    background: var(--c-bg); object-fit: cover;
+}
+body.bk-creator .bk-style-tile-label {
+    font-size: .74rem; font-weight: 700; text-align: center; color: var(--c-ink-soft);
+}
+body.bk-creator .bk-style-tile.active .bk-style-tile-label { color: var(--c-accent-d); }

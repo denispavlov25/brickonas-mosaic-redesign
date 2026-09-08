@@ -163,7 +163,10 @@
                 // crops the customer never confirmed.
             }
         };
-        setInterval(function () { if (currentTab !== "crop") lift(bestArea()); }, 900);
+        setInterval(function () {
+            if (currentTab !== "crop") lift(bestArea());
+            if (typeof ensureStylePicker === "function") ensureStylePicker();
+        }, 900);
 
         /* ------------------------------------------- full recalculation */
         var busy = document.getElementById("bk-cr-busy");
@@ -351,7 +354,7 @@
             "Solange du hier bist, siehst du das Originalfoto. Nach dem Übernehmen zeigt der Editor wieder das Mosaik."));
 
         /* ----------------------------------------------------- FARBEN tab */
-        C.heading(P.color, "Farben", "Welche Klemmbaustein-Farben verwendet werden dürfen.");
+        C.heading(P.color, "Steine", "Welche Klemmbaustein-Farben verwendet werden dürfen.");
         var paletteBox = el("div"), paletteCount = el("p", "bk-cr-swcount", "");
         P.color.append(paletteBox, paletteCount);
         var presetBtn = document.getElementById("select-starting-custom-stud-map-button");
@@ -392,7 +395,20 @@
         renderPalette();
 
         /* --------------------------------------------------- ANPASSEN tab */
-        C.heading(P.adjust, "Anpassen", "Helligkeit, Kontrast und Farbe des Motivs.");
+        /* ------------------------------------------------------- STIL tab
+         * The live site has five style presets with a real preview on each
+         * tile -- Original, Vintage, Pop, Warm, S/W -- and the Creator did not
+         * offer them at all. They live here now and lead the panel, because a
+         * preset is what a customer actually wants ("mach es wärmer"); the five
+         * sliders that used to be their own "Anpassen" tab follow underneath as
+         * the fine control for the same question. */
+        C.heading(P.style, "Stil", "Eine Vorlage wählen — darunter lässt sich alles fein nachregeln.");
+        P.style.appendChild(el("p", "bk-cr-glabel", "Stil-Vorlagen"));
+        var stylePicker = q("#bk-style-picker");
+        if (stylePicker) P.style.appendChild(stylePicker);
+        else P.style.appendChild(el("p", "bk-cr-hint", "Stil-Vorlagen stehen bereit, sobald das Mosaik berechnet ist."));
+
+        P.style.appendChild(el("p", "bk-cr-glabel", "Feinjustierung"));
         [["brightness", "Helligkeit"], ["contrast", "Kontrast"], ["saturation", "Sättigung"],
          ["hue", "Farbton"], ["value", "Hellwert"]].forEach(function (f) {
             var slider = document.getElementById(f[0] + "-slider");
@@ -407,7 +423,7 @@
             if (inc) inc.className = "bk-cr-step";
             row.append(dec || el("span"), slider, inc || el("span"));
             field.append(lab, row);
-            P.adjust.appendChild(field);
+            P.style.appendChild(field);
             slider.addEventListener("change", maybeAutoRecalc);
         });
         var resetRow = el("div", "bk-cr-row");
@@ -420,8 +436,27 @@
             resetRow.appendChild(b);
         });
         if (resetRow.children.length) {
-            P.adjust.appendChild(el("p", "bk-cr-hint", "Zurücksetzen:"));
-            P.adjust.appendChild(resetRow);
+            P.style.appendChild(el("p", "bk-cr-hint", "Zurücksetzen:"));
+            P.style.appendChild(resetRow);
+        }
+
+        /**
+         * The picker builds itself off the app's own "we reached step 2" event:
+         * that call snapshots the untouched palette (which is what the Original
+         * tile restores), builds the tiles and renders their previews. The
+         * Creator has no wizard steps, so it announces step 2 once the first
+         * mosaic exists. The same handler HIDES the picker for every other step
+         * and the app still fires that event from its own code, so visibility is
+         * re-asserted rather than set once.
+         */
+        var styleAnnounced = false;
+        function ensureStylePicker() {
+            if (!stylePicker) return;
+            if (!styleAnnounced && hasContent("step-3")) {
+                styleAnnounced = true;
+                document.dispatchEvent(new CustomEvent("bk-visual-step-change", { detail: { step: 2 } }));
+            }
+            if (styleAnnounced && stylePicker.hidden) stylePicker.hidden = false;
         }
 
         /* --------------------------------------------------------- KI tab */

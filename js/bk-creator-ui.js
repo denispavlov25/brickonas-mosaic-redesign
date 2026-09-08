@@ -25,6 +25,7 @@
         crop:  '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
         color: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="9.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="9.5" cy="15" r="1.2" fill="currentColor" stroke="none"/>',
         adjust:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
+        style: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>',
         ai:    '<path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
         paint: '<path d="M15.5 3.5l5 5-9 9-5-5z"/><path d="M6.5 12.5L3 21l8.5-3.5"/>',
         depth: '<path d="M12 2l9 5-9 5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/>',
@@ -52,12 +53,21 @@
        A tab is identified by its icon and its label; colour is reserved for
        "this is active" and "this is the primary action". */
     var ACCENT = "#2E7D32", ACCENT_SOFT = "#EAF4EA";
+    /* Each tab answers a different question, in the order the work happens:
+       what am I building (Größe) - which part of the photo (Zuschnitt) - how
+       should it look (Stil) - let the machine do it (KI) - which bricks may be
+       used (Steine) - fix it by hand (Malen).
+
+       "Anpassen" is gone as a tab of its own: five sliders are not a task, they
+       are the fine control for a look, so they moved under Stil behind the
+       presets. "Farben" became "Steine" because next to Stil and Farbton it no
+       longer said which colours it meant. */
     var TABS = [
         { id: "size",   label: "Größe",     icon: ICON.size,   accent: ACCENT, soft: ACCENT_SOFT },
         { id: "crop",   label: "Zuschnitt", icon: ICON.crop,   accent: ACCENT, soft: ACCENT_SOFT },
-        { id: "color",  label: "Farben",    icon: ICON.color,  accent: ACCENT, soft: ACCENT_SOFT },
-        { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "style",  label: "Stil",      icon: ICON.style,  accent: ACCENT, soft: ACCENT_SOFT },
         { id: "ai",     label: "KI",        icon: ICON.ai,     accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "color",  label: "Steine",    icon: ICON.color,  accent: ACCENT, soft: ACCENT_SOFT },
         { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: ACCENT, soft: ACCENT_SOFT }
     ];
 
