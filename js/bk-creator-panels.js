@@ -427,6 +427,55 @@
         /* --------------------------------------------------------- KI tab */
         C.heading(P.ai, "KI-Werkzeuge", "Automatisch aufbereiten, freistellen, Stile anwenden.");
         move(q("#bk-ai-tools") || q(".bk-ai-tools"), P.ai);
+        restructureAi();
+
+        /**
+         * The AI panel arrived as a card inside a card, with its own violet and
+         * amber palette and the free-text field folded away behind a dashed
+         * orange box -- the one part of the editor that looked like it came from
+         * somewhere else. Same nodes, same ids, same handlers; only the order
+         * and the grouping change, and the styling is taken over by the panel.
+         */
+        function restructureAi() {
+            var tools = document.getElementById("bk-ai-tools");
+            if (!tools) return;
+
+            // The promise that the photo never leaves the browser is worth
+            // keeping -- as the panel's own note, not as a card headline.
+            var head = tools.querySelector(".bk-ai-head");
+            if (head) {
+                var desc = head.querySelector("span");
+                if (desc) {
+                    var note = el("p", "bk-cr-note");
+                    note.textContent = desc.textContent;
+                    tools.insertBefore(note, tools.firstChild);
+                }
+                head.remove();
+            }
+
+            // "Zurücksetzen" belongs to the group it resets, not to a row of its
+            // own -- that row alone cost 48 px and pushed the text field below
+            // the fold on a 800 px screen.
+            var actions = tools.querySelector(".bk-ai-actions");
+            var reset = tools.querySelector(".bk-ai-reset");
+            if (actions) {
+                var row = el("div", "bk-cr-grow");
+                row.appendChild(el("p", "bk-cr-glabel", "Mit einem Klick"));
+                if (reset) row.appendChild(reset);
+                tools.insertBefore(row, actions);
+            }
+
+            // Open the free-text field and drop its toggle: a collapsed control
+            // that nobody opens is a control that does not exist.
+            var chat = document.getElementById("bk-ai-chat");
+            var toggle = document.getElementById("bk-ai-chat-toggle");
+            if (chat) {
+                chat.hidden = false;
+                tools.insertBefore(el("p", "bk-cr-glabel", "Eigener Wunsch"), chat);
+                tools.appendChild(chat);
+            }
+            if (toggle) toggle.remove();
+        }
 
         /* ------------------------------------------------------ MALEN tab */
         C.heading(P.paint, "Malen", "Einzelne Noppen übermalen, radieren oder eine Farbe aufnehmen.");

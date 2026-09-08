@@ -46,13 +46,19 @@
         return n;
     }
 
+    /* One accent for the whole editor: the shop's green. Giving every tab its
+       own hue (a red, a violet, an amber) was invented here and belonged to no
+       part of the shop -- it is why the AI panel read as a different product.
+       A tab is identified by its icon and its label; colour is reserved for
+       "this is active" and "this is the primary action". */
+    var ACCENT = "#2E7D32", ACCENT_SOFT = "#EAF4EA";
     var TABS = [
-        { id: "size",   label: "Größe",     icon: ICON.size,   accent: "#2E7D32", soft: "#EAF4EA" },
-        { id: "crop",   label: "Zuschnitt", icon: ICON.crop,   accent: "#2E7D32", soft: "#EAF4EA" },
-        { id: "color",  label: "Farben",    icon: ICON.color,  accent: "#B03A2E", soft: "#FBEDEB" },
-        { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: "#B03A2E", soft: "#FBEDEB" },
-        { id: "ai",     label: "KI",        icon: ICON.ai,     accent: "#5B4B8A", soft: "#F0ECF7" },
-        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" }
+        { id: "size",   label: "Größe",     icon: ICON.size,   accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "crop",   label: "Zuschnitt", icon: ICON.crop,   accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "color",  label: "Farben",    icon: ICON.color,  accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "adjust", label: "Anpassen",  icon: ICON.adjust, accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "ai",     label: "KI",        icon: ICON.ai,     accent: ACCENT, soft: ACCENT_SOFT },
+        { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: ACCENT, soft: ACCENT_SOFT }
     ];
 
     var root, attic, panels = {}, view, stagebar, foot, grip, sheetBtn, chips = {};
@@ -65,15 +71,24 @@
 
         /* header: identity left, facts + action right */
         var head = el("div", "bk-cr-head");
+        // One action per side, like every editor toolbar worth copying: leaving
+        // on the left, finishing on the right. Embedded in the shop the left
+        // button closes the overlay -- the shop's own bar is gone, this is the
+        // only header now.
+        var embedded = document.documentElement.classList.contains("bk-embedded");
         var back = el("button", "bk-cr-back", "&larr;");
         back.type = "button";
-        back.title = "Zurück zur klassischen Ansicht";
+        back.title = embedded ? "Konfigurator schließen" : "Zurück zur klassischen Ansicht";
+        back.setAttribute("aria-label", back.title);
         back.addEventListener("click", function () {
+            if (embedded) { closeOverlay(); return; }
             var u = new URL(window.location.href);
             u.searchParams.delete("ui");
             window.location.href = u.toString();
         });
-        var mark = el("div", "bk-cr-wordmark", "Mosaik-Editor<small>BRICKONAS BrickPic</small>");
+        // "Mosaik" is dropped on a phone so identity, price and the action all fit
+        // one row -- "BrickPic" is the product name and carries it on its own.
+        var mark = el("div", "bk-cr-wordmark", "<b>Mosaik&nbsp;</b>BrickPic");
         var meta = el("div", "bk-cr-meta");
         chips.size  = el("div", "bk-cr-chip", "<u>Format</u><b>—</b>");
         chips.studs = el("div", "bk-cr-chip", "<u>Noppen</u><b>—</b>");
@@ -138,6 +153,17 @@
         document.body.appendChild(root);
         document.body.classList.add("bk-creator");
         restorePanelWidth();
+
+        if (document.documentElement.classList.contains("bk-embedded")) {
+            try { window.parent.postMessage({ bk: "mosaic-ready" }, "*"); } catch (e) { /* no parent */ }
+            document.addEventListener("keydown", function (e) {
+                if (e.key !== "Escape") return;
+                // A sheet swallows the first Escape; the overlay closes on the next.
+                if (document.body.classList.contains("bk-cr-sheet") ||
+                    document.body.classList.contains("bk-cr-order")) { closeSheets(); return; }
+                closeOverlay();
+            });
+        }
     }
 
     /* ------------------------------------------------ resizable side column
@@ -215,6 +241,11 @@
     function closeSheets() {
         document.body.classList.remove("bk-cr-sheet", "bk-cr-order");
         if (sheetBtn) sheetBtn.setAttribute("aria-expanded", "false");
+    }
+
+    /** Ask the shop page to close the overlay; harmless when standalone. */
+    function closeOverlay() {
+        try { window.parent.postMessage({ bk: "mosaic-close" }, "*"); } catch (e) { /* no parent */ }
     }
 
     function select(id, fromUser) {

@@ -27,7 +27,7 @@ body.bk-creator {
     --c-gold:     #F2B705;
     --c-rail:     78px;
     --c-panelw:   clamp(360px, 28vw, 460px);
-    --c-head:     58px;
+    --c-head:     66px;
     margin: 0; background: var(--c-bg); overflow: hidden;
 }
 body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !important; }
@@ -41,29 +41,39 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 }
 
 /* ---------------------------------------------------------------- header */
+/* This is the ONLY header -- the shop overlay no longer draws one of its own.
+   It was reported as cramped, and it was: two 50 px strips stacked, each with
+   its content pressed against both edges. One 66 px bar with 13 px of air above
+   and below the controls instead. */
 .bk-cr-head {
-    display: flex; align-items: center; gap: 14px;
-    padding: 0 16px 0 12px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 18px 0 10px;
     background: var(--c-panel);
     border-bottom: 1px solid var(--c-line);
 }
 .bk-cr-back {
-    display: inline-flex; align-items: center; gap: 7px;
-    background: none; border: 0; padding: 8px 11px; border-radius: 9px;
-    cursor: pointer; font: inherit; font-weight: 700; color: var(--c-ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex: 0 0 40px;
+    background: none; border: 0; border-radius: 10px;
+    cursor: pointer; font: inherit; font-size: 1.15rem; font-weight: 700; color: var(--c-ink-soft);
 }
 .bk-cr-back:hover { background: var(--c-bg); color: var(--c-ink); }
+.bk-cr-wordmark b { font-weight: 600; }
 .bk-cr-wordmark {
+    display: flex; align-items: center; gap: 8px; margin-right: 6px;
     font-family: var(--bk-font-heading, 'Fredoka', sans-serif);
-    font-size: 1.02rem; font-weight: 600; letter-spacing: .01em;
+    font-size: 1.05rem; font-weight: 600; letter-spacing: .01em; white-space: nowrap;
 }
-.bk-cr-wordmark small { display: block; font-size: .68rem; font-weight: 400; color: var(--c-ink-soft); letter-spacing: 0; }
+.bk-cr-wordmark::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--c-accent); flex: 0 0 9px;
+}
 
 /* Chips sit on the right, next to the action — not centred like the reference. */
 .bk-cr-meta { margin-left: auto; display: flex; align-items: stretch; gap: 8px; }
 .bk-cr-chip {
-    display: grid; align-content: center; gap: 1px;
-    padding: 5px 13px; border-radius: 10px;
+    display: grid; align-content: center; gap: 2px;
+    padding: 7px 14px; border-radius: 10px;
     background: var(--c-bg); border: 1px solid var(--c-line);
     line-height: 1.15;
 }
@@ -412,8 +422,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
    edge, while the stage bar ran past it entirely. Both bars are now single
    rows that never wrap; the stage bar scrolls sideways instead. */
 @media (max-width: 620px) {
-    .bk-cr-head { gap: 8px; padding: 0 10px; }
-    .bk-cr-wordmark { display: none; }
+    .bk-cr-head { gap: 8px; padding: 0 8px; }
+    .bk-cr-wordmark { font-size: .98rem; margin-right: 0; }
+    .bk-cr-wordmark b { display: none; }
     .bk-cr-back { padding: 10px 12px; }
     .bk-cr-meta { margin-left: auto; }
     .bk-cr-chip { flex: 0 0 auto; padding: 5px 10px; }
@@ -433,6 +444,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
        the size list and the header chip already say, so on a phone the footer is
        one row: price, then the button. */
     .bk-cr-foot .mosaic-product-card { padding: 12px 16px 16px; }
+    /* the order sheet has the room, so the full card is shown there */
+    .bk-cr-foot .mosaic-product-meta { display: flex; margin: 0 0 10px; }
+    .bk-cr-foot .mosaic-order-hint { font-size: .76rem !important; }
     .bk-cr-foot .mosaic-add-to-cart-btn { flex: 1 1 auto; justify-content: center; min-height: 48px; }
     .bk-cr-foot .mosaic-product-price { font-size: 1.25rem; }
     .bk-cr-foot .mosaic-order-hint { margin-top: 8px; font-size: .7rem; line-height: 1.35; }
@@ -521,11 +535,8 @@ html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
    the same identity here produced two stacked headers and cost ~110 px of the
    height the editor exists to gain, so in the overlay this bar keeps only the
    facts and the action. */
-html.bk-embedded body.bk-creator { --c-head: 50px; }
-html.bk-embedded .bk-cr-back,
-html.bk-embedded .bk-cr-wordmark { display: none; }
-html.bk-embedded .bk-cr-head { padding: 0 14px; }
-html.bk-embedded .bk-cr-meta { margin-left: 0; }
+/* The shop overlay draws no bar of its own any more, so the identity and the
+   way out live here -- one header, not two stacked. */
 
 /* ===================================================== order card in footer
    The shop's own card is reused as-is; inside the editor its marketing title
@@ -537,7 +548,11 @@ html.bk-embedded .bk-cr-meta { margin-left: 0; }
 }
 .bk-cr-foot .mosaic-product-title,
 .bk-cr-foot .mosaic-product-desc { display: none; }
-.bk-cr-foot .mosaic-product-meta { margin: 0 0 9px; }
+/* The stud count is already a header chip, and this footer sits under every
+   panel: 34 px of duplication plus a four-line notice were squeezing the panels
+   above it -- the AI text field ended up 93 px below the fold. */
+.bk-cr-foot .mosaic-product-meta { display: none; }
+.bk-cr-foot .mosaic-order-hint { font-size: .7rem !important; line-height: 1.35 !important; }
 .bk-cr-foot .mosaic-product-price-row { display: flex; align-items: center; gap: 12px; margin: 0; }
 .bk-cr-foot .mosaic-product-price { font-size: 1.4rem; font-weight: 800; color: var(--c-accent-d); }
 .bk-cr-foot .mosaic-add-to-cart-btn { margin-left: auto; flex: 0 0 auto; }
@@ -547,3 +562,106 @@ html.bk-embedded .bk-cr-meta { margin-left: 0; }
 /* One short pulse after "Fertig", so the eye is taken to the button. */
 @keyframes bk-cr-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(46,125,50,.55); } 50% { box-shadow: 0 0 0 8px rgba(46,125,50,0); } }
 .bk-cr-pulse { animation: bk-cr-pulse 700ms ease-out 2; }
+
+
+/* ============================================================ KI panel =====
+   The app ships this block with its own card, its own violet/amber palette and
+   a dashed collapsible -- inside the editor it read as a different product.
+   Everything below re-dresses those exact nodes in the panel's own language:
+   the tab's accent colour, the same card and button shapes as Grösse and Malen,
+   and no colour that is not already in the shop. */
+.bk-cr-glabel {
+    margin: 18px 0 8px; font-size: .72rem; font-weight: 800;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--c-ink-soft);
+}
+.bk-cr-glabel:first-of-type { margin-top: 4px; }
+/* label left, the action that belongs to the group right */
+.bk-cr-grow { display: flex; align-items: center; gap: 10px; }
+.bk-cr-grow .bk-cr-glabel { margin: 18px 0 8px; }
+.bk-cr-grow > :last-child { margin-left: auto; }
+
+body.bk-creator .bk-ai-tools {
+    display: block; background: none !important; border: 0 !important;
+    border-radius: 0 !important; padding: 0 !important; margin: 0 !important;
+    box-shadow: none !important;
+}
+body.bk-creator .bk-ai-tools::before { display: none !important; }
+
+body.bk-creator .bk-ai-actions { display: grid; gap: 8px; }
+body.bk-creator .bk-ai-btn {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    text-align: left; cursor: pointer; font: inherit;
+    padding: 11px 13px; min-height: 60px;
+    border: 1.5px solid var(--c-line) !important; border-radius: 12px !important;
+    background: var(--c-panel) !important; color: var(--c-ink) !important;
+    box-shadow: none !important;
+    transition: border-color .16s ease, background .16s ease;
+}
+body.bk-creator .bk-ai-btn:hover { border-color: var(--tab-accent, var(--c-accent)) !important; background: #FAFCFA !important; }
+body.bk-creator .bk-ai-btn-primary {
+    border-color: transparent !important;
+    background: var(--tab-accent, var(--c-accent)) !important; color: #fff !important;
+}
+body.bk-creator .bk-ai-btn-primary:hover { filter: brightness(.93); background: var(--tab-accent, var(--c-accent)) !important; }
+body.bk-creator .bk-ai-btn-ico {
+    display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px;
+    border-radius: 10px; background: var(--tab-soft, #EAF4EA) !important;
+    color: var(--tab-accent, var(--c-accent)) !important;
+}
+body.bk-creator .bk-ai-btn-primary .bk-ai-btn-ico {
+    background: rgba(255,255,255,.22) !important; color: #fff !important;
+}
+body.bk-creator .bk-ai-btn-tx { display: grid; gap: 1px; min-width: 0; }
+body.bk-creator .bk-ai-btn-tx > span { font-weight: 800; font-size: .92rem; }
+body.bk-creator .bk-ai-btn-tx small { font-size: .76rem; opacity: .78; font-weight: 600; }
+
+body.bk-creator .bk-ai-reset {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    margin: 0; padding: 6px 10px; min-height: 32px;
+    background: none !important; border: 1px solid var(--c-line) !important;
+    border-radius: 8px !important; cursor: pointer; font: inherit;
+    font-size: .78rem; font-weight: 700; color: var(--c-ink-soft) !important;
+}
+body.bk-creator .bk-ai-reset:hover { border-color: var(--c-line-2) !important; color: var(--c-ink) !important; background: var(--c-bg) !important; }
+body.bk-creator .bk-ai-reset svg { width: 14px; height: 14px; }
+
+body.bk-creator .bk-ai-status { margin: 9px 0 0; font-size: .78rem; color: var(--c-ink-soft); }
+body.bk-creator .bk-ai-swatches { margin-top: 12px; }
+body.bk-creator .bk-ai-swatch-label { font-size: .78rem; font-weight: 700; color: var(--c-ink-soft); }
+
+/* free-text field: one bordered box, always open */
+/* Input first, conversation below it. A log above the field pushed the field
+   itself off the bottom of the panel -- and this is a command box, not a
+   messenger: the thing you type in has to be the thing you see. */
+body.bk-creator .bk-ai-chat {
+    display: flex; flex-direction: column-reverse; gap: 9px;
+    margin: 0 0 4px; padding: 9px;
+    background: var(--c-bg) !important; border: 1px solid var(--c-line) !important;
+    border-radius: 12px !important;
+}
+body.bk-creator .bk-ai-chat-log {
+    /* Short on purpose: the input must stay above the fold, otherwise the one
+       control this section exists for is the one nobody sees. */
+    max-height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    margin: 0; font-size: .82rem; line-height: 1.45;
+}
+body.bk-creator .bk-ai-msg { max-width: 92%; }
+body.bk-creator .bk-ai-msg.bot { background: #EAF4EA !important; color: var(--c-ink) !important; }
+body.bk-creator .bk-ai-msg.user { background: var(--c-accent) !important; color: #fff !important; }
+body.bk-creator .bk-ai-chat-log:empty { display: none; }
+body.bk-creator .bk-ai-chat-form { display: flex; gap: 7px; }
+body.bk-creator .bk-ai-chat-input {
+    flex: 1 1 auto; min-width: 0; min-height: 44px;
+    padding: 10px 12px; font: inherit; font-size: .88rem;
+    background: var(--c-panel) !important; color: var(--c-ink) !important;
+    border: 1.5px solid var(--c-line) !important; border-radius: 9px !important;
+}
+body.bk-creator .bk-ai-chat-input:focus {
+    outline: none; border-color: var(--tab-accent, var(--c-accent)) !important;
+}
+body.bk-creator .bk-ai-chat-send {
+    flex: 0 0 44px; width: 44px; height: 44px; display: grid; place-items: center;
+    border: 0 !important; border-radius: 9px !important; cursor: pointer;
+    background: var(--tab-accent, var(--c-accent)) !important; color: #fff !important;
+}
+body.bk-creator .bk-ai-chat-send:hover { filter: brightness(.93); }
