@@ -26,7 +26,7 @@ body.bk-creator {
     --c-accent-d: var(--bk-green-dark, #1B5E20);
     --c-gold:     #F2B705;
     --c-rail:     78px;
-    --c-panelw:   clamp(330px, 25vw, 430px);
+    --c-panelw:   clamp(360px, 28vw, 460px);
     --c-head:     58px;
     margin: 0; background: var(--c-bg); overflow: hidden;
 }
@@ -84,7 +84,35 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 .bk-cr-finish:hover { background: var(--c-accent-d); }
 
 /* ------------------------------------------------------------------ body */
-.bk-cr-main { display: grid; grid-template-columns: var(--c-rail) var(--c-panelw) 1fr; min-height: 0; }
+.bk-cr-main {
+    display: grid; min-height: 0;
+    grid-template-columns: var(--c-rail) var(--c-panelw) 7px 1fr;
+    grid-template-areas: "rail side grip stage";
+}
+.bk-cr-rail { grid-area: rail; }
+.bk-cr-side { grid-area: side; }
+.bk-cr-grip { grid-area: grip; }
+.bk-cr-stage { grid-area: stage; }
+
+/* ------------------------------------------------------------ drag grip */
+.bk-cr-grip {
+    position: relative; cursor: col-resize; background: var(--c-line);
+    border: 0; padding: 0; touch-action: none;
+}
+.bk-cr-grip::before {
+    content: ""; position: absolute; inset: 0 -4px; /* a 15 px hit area on a 7 px line */
+}
+.bk-cr-grip::after {
+    content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 3px; height: 34px; border-radius: 2px; background: var(--c-line-2);
+}
+.bk-cr-grip:hover, .bk-cr-grip:focus-visible { background: #CBE3CC; outline: none; }
+.bk-cr-grip:focus-visible::after { background: var(--c-accent); height: 54px; }
+body.bk-cr-dragging { cursor: col-resize; user-select: none; }
+body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
+
+/* The sheet handle is a phone affordance; on a desktop the grip does the job. */
+.bk-cr-grab { display: none; }
 
 /* ------------------------------------------------------- vertical rail */
 .bk-cr-rail {
@@ -271,14 +299,112 @@ body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !importan
 @keyframes bkspin { to { transform: rotate(360deg); } }
 
 /* -------------------------------------------------------- responsive */
+/* ------------------------------------------------------------ phone layout
+   The old version squeezed the controls into a 42vh strip between two bars,
+   which left roughly 250 px for a size list, a colour grid or the AI chat --
+   unusable, and the text was below 14 px on top of that.
+
+   Now: picture first, controls as a sheet that opens to nearly full height,
+   and the tool bar at the BOTTOM where a thumb reaches it. Every target is at
+   least 48 px, which is the accessibility floor for touch. */
 @media (max-width: 940px) {
-    body.bk-creator { --c-rail: 100%; --c-panelw: 100%; }
-    .bk-cr-main { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
-    .bk-cr-rail { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--c-line); }
-    .bk-cr-tab { flex: 1 0 auto; min-width: 66px; }
-    .bk-cr-side { border-right: 0; border-bottom: 1px solid var(--c-line); max-height: 42vh; }
+    body.bk-creator { --c-rail: auto; --c-panelw: 100% !important; }
+    .bk-cr-main {
+        grid-template-columns: 1fr;
+        /* minmax(0, 1fr), not 1fr: a plain fr track keeps an automatic minimum
+           the size of its content, so the picture refused to give up 340 px and
+           the sheet could never grow past its closed height. */
+        grid-template-rows: minmax(0, 1fr) auto auto;
+        grid-template-areas: "stage" "side" "rail";
+    }
+    .bk-cr-grip { display: none; }
+
+    .bk-cr-stage { min-height: 0; overflow: hidden; }
+    .bk-cr-view { min-height: 0; }
+    .bk-cr-view { padding: 10px; }
+    .bk-cr-view canvas[id$="-upscaled"] { max-height: 100%; object-fit: contain; }
+
+    /* the sheet */
+    .bk-cr-side {
+        border-right: 0; border-top: 1px solid var(--c-line);
+        border-radius: 16px 16px 0 0; box-shadow: 0 -6px 22px rgba(26,42,27,.10);
+        grid-template-rows: auto 1fr auto;
+        height: 44vh; transition: height .22s ease;
+        /* Even fully open the picture keeps a strip: a control panel that hides
+           what it is controlling is worse than a small one. */
+        max-height: calc(100vh - 230px);
+        max-height: calc(100dvh - 230px);
+    }
+    body.bk-cr-sheet .bk-cr-side { height: 76vh; }
+
+    .bk-cr-grab {
+        display: flex; align-items: center; justify-content: center; gap: 9px;
+        width: 100%; min-height: 44px; padding: 8px 12px 6px;
+        background: none; border: 0; border-bottom: 1px solid var(--c-line);
+        cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700;
+        color: var(--c-ink-soft);
+    }
+    .bk-cr-grab i { width: 38px; height: 4px; border-radius: 2px; background: var(--c-line-2); }
+
+    /* tool bar at the bottom, in thumb reach */
+    .bk-cr-rail {
+        flex-direction: row; overflow-x: auto; gap: 2px;
+        border-right: 0; border-top: 1px solid var(--c-line);
+        padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    }
+    .bk-cr-tab { flex: 1 0 auto; min-width: 62px; min-height: 52px; font-size: .72rem; }
+    .bk-cr-tab svg { width: 23px; height: 23px; }
+    .bk-cr-tab[aria-selected="true"]::after { bottom: 1px; }
+
+    /* readable and tappable: nothing below 14 px, no target under 48 px */
+    .bk-cr-panels { padding: 14px 16px 26px; }
+    .bk-cr-psub, .bk-cr-hint, .bk-cr-note { font-size: .88rem; }
+    .bk-cr-size-card { padding: 11px 12px; min-height: 60px; }
+    .bk-cr-size-cm, .bk-cr-size-price { font-size: 1rem; }
+    .bk-cr-size-sub { font-size: .82rem; }
+    .bk-cr-shape { min-height: 52px; font-size: .8rem; }
+    .bk-cr-sw { min-height: 44px; }
+    .bk-cr-step { width: 40px; height: 40px; }
+    .bk-cr-row { grid-template-columns: 40px 1fr 40px; }
+    .bk-cr-root input[type="range"] { height: 34px; }
+    .bk-cr-undo { min-height: 40px; font-size: .82rem; }
+    .bk-cr-foot { max-height: none; }
+
     .bk-cr-wordmark small { display: none; }
     .bk-cr-chip u { display: none; }
+    .bk-cr-finish { padding: 11px 15px; }
+}
+
+/* Narrow phones: measured at 390 px, the header wrapped "Mosaik-Editor" onto
+   two lines, broke "199,00 EUR" mid-value and pushed "Fertig" off the right
+   edge, while the stage bar ran past it entirely. Both bars are now single
+   rows that never wrap; the stage bar scrolls sideways instead. */
+@media (max-width: 620px) {
+    .bk-cr-head { gap: 8px; padding: 0 10px; }
+    .bk-cr-wordmark { display: none; }
+    .bk-cr-back { padding: 10px 12px; }
+    .bk-cr-meta { margin-left: auto; }
+    .bk-cr-chip { flex: 0 0 auto; padding: 5px 10px; }
+    .bk-cr-chip b { white-space: nowrap; font-size: .9rem; }
+    .bk-cr-finish { flex: 0 0 auto; padding: 11px 15px; font-size: .92rem; }
+
+    .bk-cr-stagebar { gap: 9px; padding: 7px 12px; overflow-x: auto; scrollbar-width: none; }
+    .bk-cr-stagebar::-webkit-scrollbar { display: none; }
+    .bk-cr-stagebar > * { flex: 0 0 auto; white-space: nowrap; }
+    .bk-cr-stagebar input[type="range"] { width: 96px; }
+    .bk-cr-stagebar .bk-cr-spacer { margin-left: 0; }
+
+    .bk-cr-chip:not(.bk-cr-chip--price) { display: none; }
+
+    /* The order footer took 380 of the sheet's 614 px, leaving 230 px for the
+       controls the customer actually came for. The stud/piece chips repeat what
+       the size list and the header chip already say, so on a phone the footer is
+       one row: price, then the button. */
+    .bk-cr-foot .mosaic-product-card { padding: 10px 14px 12px; }
+    .bk-cr-foot .mosaic-product-meta { display: none; }
+    .bk-cr-foot .mosaic-add-to-cart-btn { flex: 1 1 auto; justify-content: center; min-height: 48px; }
+    .bk-cr-foot .mosaic-product-price { font-size: 1.25rem; }
+    .bk-cr-foot .mosaic-order-hint { margin-top: 8px; font-size: .7rem; line-height: 1.35; }
 }
 
 /* --------------------------------------------------- busy overlay -------

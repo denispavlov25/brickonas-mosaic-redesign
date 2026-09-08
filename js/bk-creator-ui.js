@@ -55,7 +55,8 @@
         { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: "#B07A05", soft: "#FDF6E6" }
     ];
 
-    var root, attic, panels = {}, view, stagebar, foot, chips = {};
+    var root, attic, panels = {}, view, stagebar, foot, grip, sheetBtn, chips = {};
+    var PANEL_MIN = 320, PANEL_MAX = 680, PANEL_KEY = "bkCrPanelW";
 
     function buildShell() {
         attic = el("div", "bk-cr-attic");
@@ -90,11 +91,17 @@
         var rail = el("div", "bk-cr-rail");
         rail.setAttribute("role", "tablist");
         var side = el("div", "bk-cr-side");
+        // Phones only: the sheet opens to nearly full height, because 42vh is
+        // not enough room to pick a size or type into the AI chat.
+        sheetBtn = el("button", "bk-cr-grab", "<i></i><span>Mehr anzeigen</span>");
+        sheetBtn.type = "button";
+        sheetBtn.setAttribute("aria-expanded", "false");
+        sheetBtn.addEventListener("click", function () { toggleSheet(); });
         var body = el("div", "bk-cr-panels");
         // The order card lives in a footer that does NOT scroll: price and
         // "Bestellen" stay in view while the size list above is scrolled.
         foot = el("div", "bk-cr-foot");
-        side.append(body, foot);
+        side.append(sheetBtn, body, foot);
 
         TABS.forEach(function (t, i) {
             var b = el("button", "bk-cr-tab", svg(t.icon) + "<span>" + t.label + "</span>");
@@ -103,7 +110,7 @@
             b.setAttribute("aria-selected", i === 0 ? "true" : "false");
             b.style.setProperty("--tab-accent", t.accent);
             b.style.setProperty("--tab-soft", t.soft);
-            b.addEventListener("click", function () { select(t.id); });
+            b.addEventListener("click", function () { select(t.id, true); });
             rail.appendChild(b);
 
             var p = el("section", "bk-cr-panel");
@@ -119,19 +126,94 @@
         view = el("div", "bk-cr-view");
         stage.append(stagebar, view);
 
-        main.append(rail, side, stage);
+        grip = el("div", "bk-cr-grip");
+        grip.setAttribute("role", "separator");
+        grip.setAttribute("aria-orientation", "vertical");
+        grip.setAttribute("aria-label", "Breite der Bedienspalte");
+        grip.tabIndex = 0;
+        wireGrip();
+
+        main.append(rail, side, grip, stage);
         root.append(head, main);
         document.body.appendChild(root);
         document.body.classList.add("bk-creator");
+        restorePanelWidth();
     }
 
-    function select(id) {
+    /* ------------------------------------------------ resizable side column
+       A single fixed width is always wrong for somebody: roomy on a 27" screen,
+       tight on a 13" laptop, and how much room the picture needs depends on what
+       the customer is doing. So the divider is draggable and the choice sticks. */
+    function setPanelWidth(px, remember) {
+        var w = Math.max(PANEL_MIN, Math.min(PANEL_MAX, Math.round(px)));
+        document.body.style.setProperty("--c-panelw", w + "px");
+        if (remember) { try { localStorage.setItem(PANEL_KEY, String(w)); } catch (e) { /* private mode */ } }
+        return w;
+    }
+    function currentPanelWidth() {
+        var side = root && root.querySelector(".bk-cr-side");
+        return side ? side.getBoundingClientRect().width : 360;
+    }
+    function restorePanelWidth() {
+        var v = null;
+        try { v = localStorage.getItem(PANEL_KEY); } catch (e) { /* private mode */ }
+        // Never restore a width that would leave no picture on a smaller screen.
+        if (v && window.innerWidth > 940) setPanelWidth(Math.min(+v, window.innerWidth * 0.55), false);
+    }
+    function wireGrip() {
+        var startX = 0, startW = 0, dragging = false;
+        grip.addEventListener("pointerdown", function (e) {
+            dragging = true; startX = e.clientX; startW = currentPanelWidth();
+            grip.setPointerCapture(e.pointerId);
+            document.body.classList.add("bk-cr-dragging");
+            e.preventDefault();
+        });
+        grip.addEventListener("pointermove", function (e) {
+            if (dragging) setPanelWidth(startW + (e.clientX - startX), false);
+        });
+        function stop(e) {
+            if (!dragging) return;
+            dragging = false;
+            document.body.classList.remove("bk-cr-dragging");
+            setPanelWidth(currentPanelWidth(), true);
+            if (e && e.pointerId != null && grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+        }
+        grip.addEventListener("pointerup", stop);
+        grip.addEventListener("pointercancel", stop);
+        // A divider only a mouse can move is not usable for everyone.
+        grip.addEventListener("keydown", function (e) {
+            var d = e.key === "ArrowLeft" ? -24 : e.key === "ArrowRight" ? 24 : 0;
+            if (!d) return;
+            e.preventDefault();
+            setPanelWidth(currentPanelWidth() + d, true);
+        });
+        grip.addEventListener("dblclick", function () {
+            document.body.style.removeProperty("--c-panelw");
+            try { localStorage.removeItem(PANEL_KEY); } catch (err) { /* private mode */ }
+        });
+    }
+
+    /* ------------------------------------------------------- mobile sheet */
+    function toggleSheet(force) {
+        var open = typeof force === "boolean" ? force : !document.body.classList.contains("bk-cr-sheet");
+        document.body.classList.toggle("bk-cr-sheet", open);
+        if (sheetBtn) {
+            sheetBtn.setAttribute("aria-expanded", open ? "true" : "false");
+            sheetBtn.querySelector("span").textContent = open ? "Bild zeigen" : "Mehr anzeigen";
+        }
+    }
+
+    function select(id, fromUser) {
         var tabs = root.querySelectorAll(".bk-cr-tab");
         TABS.forEach(function (t, i) {
             tabs[i].setAttribute("aria-selected", t.id === id ? "true" : "false");
             panels[t.id].hidden = t.id !== id;
         });
         if (typeof window.bkCrShowStage === "function") window.bkCrShowStage(id);
+        // On a phone a TAP on a tool is a request to see that tool -- but the
+        // select() that runs while the shell is built is not, and opening the
+        // sheet there left the picture 53 px tall before anyone had asked.
+        if (fromUser && window.matchMedia("(max-width: 940px)").matches) toggleSheet(true);
     }
 
     /** Panel heading: coloured stud, title, optional sub-line. */
@@ -150,6 +232,7 @@
         view:   function () { return view; },
         stagebar: function () { return stagebar; },
         foot:   function () { return foot; },
+        sheet:  toggleSheet,
         chips:  function () { return chips; }
     };
 })();
