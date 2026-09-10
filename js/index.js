@@ -4752,7 +4752,19 @@ function goToStep(stepNumber) {
         tmp.width = GRID; tmp.height = GRID;
         var tmpCtx = tmp.getContext("2d");
         tmpCtx.imageSmoothingEnabled = true;
-        tmpCtx.drawImage(src, 0, 0, GRID, GRID);
+        // Fit the WHOLE mosaic into the square, letterboxed -- never squash it.
+        // Drawing a 240x48 mosaic straight into a 32x32 box compressed it five
+        // times vertically, which is why the tiles read as vertical smears. A
+        // centre crop removes the distortion but, at 5:1, shows one uniform
+        // patch: useless for comparing colour treatments, which is the tile's
+        // whole job. Letterboxing keeps the full colour range and shows the
+        // format at the same time.
+        var fitScale = Math.min(GRID / src.width, GRID / src.height);
+        var fitW = Math.max(1, Math.round(src.width * fitScale));
+        var fitH = Math.max(1, Math.round(src.height * fitScale));
+        var fitX = Math.floor((GRID - fitW) / 2);
+        var fitY = Math.floor((GRID - fitH) / 2);
+        tmpCtx.drawImage(src, 0, 0, src.width, src.height, fitX, fitY, fitW, fitH);
         var basePixels = tmpCtx.getImageData(0, 0, GRID, GRID).data;
         var distFn =
             (colorDistanceFunctionsInfo.euclideanLAB && colorDistanceFunctionsInfo.euclideanLAB.func) ||
@@ -4783,14 +4795,21 @@ function goToStep(stepNumber) {
                     canvas.width = GRID * DOT;
                     canvas.height = GRID * DOT;
                     var ctx = canvas.getContext("2d");
-                    ctx.fillStyle = "#222";
+                    // Light surround, dark plate: the letterbox bars read as the
+                    // tile's own background instead of as a black box.
+                    ctx.fillStyle = "#EDF2EC";
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "#222";
+                    ctx.fillRect(fitX * DOT, fitY * DOT, fitW * DOT, fitH * DOT);
                     var radius = DOT / 2;
                     for (var i = 0; i < GRID * GRID; i++) {
+                        var col = i % GRID, row = Math.floor(i / GRID);
+                        // Outside the fitted picture there is no mosaic to show.
+                        if (col < fitX || col >= fitX + fitW || row < fitY || row >= fitY + fitH) continue;
                         var r = aligned[i * 4], g = aligned[i * 4 + 1], b = aligned[i * 4 + 2];
                         ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-                        var x = (i % GRID) * DOT + radius;
-                        var y = Math.floor(i / GRID) * DOT + radius;
+                        var x = col * DOT + radius;
+                        var y = row * DOT + radius;
                         ctx.beginPath();
                         ctx.arc(x, y, radius - 0.3, 0, Math.PI * 2);
                         ctx.fill();

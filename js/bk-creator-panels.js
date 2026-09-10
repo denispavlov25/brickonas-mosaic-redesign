@@ -521,6 +521,7 @@
             }
             if (styleAnnounced && stylePicker.hidden) stylePicker.hidden = false;
             annotateStyleTiles();
+            fitTileShape();
         }
 
         /**
@@ -530,6 +531,25 @@
          * it up front is what stops the count in "Steine" from looking like it
          * moved on its own.
          */
+        /**
+         * Let the tile take the shape of the mosaic. The preview is drawn as a
+         * square with the motif letterboxed inside it; giving the tile the
+         * mosaic's own ratio lets object-fit: cover crop exactly those empty
+         * bars away, so a 240x48 panorama fills its tile instead of floating in
+         * white. Clamped, because a raw 5:1 tile would be a hairline.
+         */
+        var lastShape = "";
+        function fitTileShape() {
+            if (!stylePicker) return;
+            var w = +document.getElementById("width-slider").value,
+                h = +document.getElementById("height-slider").value;
+            if (!w || !h) return;
+            var ar = Math.max(0.75, Math.min(1.78, w / h)).toFixed(3);
+            if (ar === lastShape) return;
+            lastShape = ar;
+            stylePicker.style.setProperty("--bk-tile-ar", ar);
+        }
+
         var tilesAnnotated = false;
         function annotateStyleTiles() {
             if (tilesAnnotated) return;
