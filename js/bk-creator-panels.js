@@ -866,7 +866,12 @@
             var n = document.getElementById(id);
             if (!n) return;
             n.addEventListener("input", updateHead);
-            n.addEventListener("change", function () { updateHead(); renderSizes(); });
+            // markSelected, NOT renderSizes: the list's CONTENT depends only on
+            // the shape filter and the variation table, never on the current
+            // selection -- and pickSize dispatches this very "change", so the
+            // full rebuild it was meant to avoid happened anyway (measured:
+            // three rebuilds per card click).
+            n.addEventListener("change", function () { updateHead(); markSelected(); });
         });
 
         // The old resolution card duplicates the new size cards — park it.
@@ -879,6 +884,9 @@
         if (!parkOrderCard() && window.MutationObserver) {
             var mo = new MutationObserver(function () { if (parkOrderCard()) mo.disconnect(); });
             mo.observe(document.body, { childList: true, subtree: true });
+            // If the card never appears, do not keep a whole-document observer
+            // alive for the life of the tab.
+            setTimeout(function () { mo.disconnect(); }, 120000);
         }
 
         // Without this the editor would open on the raw photo and every control
@@ -908,10 +916,30 @@
         var ex = document.getElementById("mosaic-examples");
         return !ex || hiddenByAnyAncestor(ex);    // upload card gone = a picture is in
     }
-    function waitForImage() {
+    /**
+     * Wait for the customer's picture. This used to poll every 200 ms FOREVER:
+     * on a page where nobody uploads anything that is five wake-ups a second for
+     * the life of the tab. The canvas getting its real size is an attribute
+     * change, so it can simply be observed; the poll stays as a fallback for the
+     * paths an observer cannot see and backs off to once a second.
+     */
+    function waitForImage(delay) {
         if (hasImage()) { boot(); return; }
-        setTimeout(waitForImage, 200);
+        setTimeout(function () { waitForImage(Math.min((delay || 200) * 1.4, 1000)); }, delay || 200);
     }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", waitForImage);
-    else waitForImage();
+    function watchForImage() {
+        var c = document.getElementById("step-1-canvas-upscaled");
+        if (!c || !window.MutationObserver) return;
+        var mo = new MutationObserver(function () {
+            if (hasImage()) { mo.disconnect(); boot(); }
+        });
+        mo.observe(c, { attributes: true, attributeFilter: ["width", "height"] });
+    }
+    var booted = false;
+    var _boot = boot;
+    boot = function () { if (booted) return; booted = true; _boot(); };
+
+    function start() { watchForImage(); waitForImage(200); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+    else start();
 })();

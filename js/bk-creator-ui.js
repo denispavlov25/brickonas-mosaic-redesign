@@ -131,8 +131,24 @@
         TABS.forEach(function (t, i) {
             var b = el("button", "bk-cr-tab", svg(t.icon) + "<span>" + t.label + "</span>");
             b.type = "button";
+            b.id = "bk-cr-tab-" + t.id;
             b.setAttribute("role", "tab");
+            b.setAttribute("aria-controls", "bk-cr-panel-" + t.id);
             b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+            // Only the active tab is in the tab order; the arrow keys move
+            // between them. That is the contract role="tablist" promises, and
+            // without it a screen reader announces a tablist that cannot be used.
+            b.tabIndex = i === 0 ? 0 : -1;
+            b.addEventListener("keydown", function (e) {
+                var d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1
+                      : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+                if (!d) return;
+                e.preventDefault();
+                var next = TABS[(i + d + TABS.length) % TABS.length];
+                select(next.id, true);
+                var nb = document.getElementById("bk-cr-tab-" + next.id);
+                if (nb) nb.focus();
+            });
             b.style.setProperty("--tab-accent", t.accent);
             b.style.setProperty("--tab-soft", t.soft);
             b.addEventListener("click", function () { select(t.id, true); });
@@ -140,6 +156,9 @@
 
             var p = el("section", "bk-cr-panel");
             p.dataset.tab = t.id;
+            p.id = "bk-cr-panel-" + t.id;
+            p.setAttribute("role", "tabpanel");
+            p.setAttribute("aria-labelledby", "bk-cr-tab-" + t.id);
             p.hidden = i !== 0;
             p.style.setProperty("--tab-accent", t.accent);
             body.appendChild(p);
@@ -181,6 +200,7 @@
        tight on a 13" laptop, and how much room the picture needs depends on what
        the customer is doing. So the divider is draggable and the choice sticks. */
     function setPanelWidth(px, remember) {
+        if (!isFinite(px)) return null;
         var w = Math.max(PANEL_MIN, Math.min(PANEL_MAX, Math.round(px)));
         document.body.style.setProperty("--c-panelw", w + "px");
         if (remember) { try { localStorage.setItem(PANEL_KEY, String(w)); } catch (e) { /* private mode */ } }
@@ -193,8 +213,13 @@
     function restorePanelWidth() {
         var v = null;
         try { v = localStorage.getItem(PANEL_KEY); } catch (e) { /* private mode */ }
+        // A garbled stored value would reach the stylesheet as "NaNpx", which
+        // invalidates --c-panelw and takes the whole grid-template-columns
+        // declaration down with it -- the layout collapses. Only finite numbers.
+        var n = parseFloat(v);
+        if (!isFinite(n)) return;
         // Never restore a width that would leave no picture on a smaller screen.
-        if (v && window.innerWidth > 940) setPanelWidth(Math.min(+v, window.innerWidth * 0.55), false);
+        if (window.innerWidth > 940) setPanelWidth(Math.min(n, window.innerWidth * 0.55), false);
     }
     function wireGrip() {
         var startX = 0, startW = 0, dragging = false;
@@ -243,9 +268,11 @@
 
     /** "Fertig" on a phone: the order card gets the sheet to itself. */
     function orderSheet(open) {
-        if (sheetBtn) sheetBtn.querySelector(".bk-cr-grabtitle").textContent = "Bestellen";
-        document.body.classList.toggle("bk-cr-order", open !== false);
-        if (open !== false) document.body.classList.remove("bk-cr-sheet");
+        var on = open !== false;
+        if (sheetBtn && on) sheetBtn.querySelector(".bk-cr-grabtitle").textContent = "Bestellen";
+        document.body.classList.toggle("bk-cr-order", on);
+        if (on) document.body.classList.remove("bk-cr-sheet");
+        if (sheetBtn) sheetBtn.setAttribute("aria-expanded", on ? "true" : "false");
     }
 
     function closeSheets() {
@@ -261,8 +288,10 @@
     function select(id, fromUser) {
         var tabs = root.querySelectorAll(".bk-cr-tab");
         TABS.forEach(function (t, i) {
-            tabs[i].setAttribute("aria-selected", t.id === id ? "true" : "false");
-            panels[t.id].hidden = t.id !== id;
+            var on = t.id === id;
+            tabs[i].setAttribute("aria-selected", on ? "true" : "false");
+            tabs[i].tabIndex = on ? 0 : -1;
+            panels[t.id].hidden = !on;
         });
         if (typeof window.bkCrShowStage === "function") window.bkCrShowStage(id);
         // The sheet header carries the title on a phone, so the panel's own
