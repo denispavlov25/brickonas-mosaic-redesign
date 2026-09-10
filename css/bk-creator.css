@@ -280,13 +280,19 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 }
 /* Canvas controls dock into a bar at the TOP of the stage, not a floating pill. */
 .bk-cr-stagebar {
-    display: flex; align-items: center; gap: 12px;
+    /* A toolbar never wraps: squeezed, "100 %" broke across two lines and
+       "Neu berechnen" turned the bar two rows tall. It scrolls sideways
+       instead -- at every width, not just on narrow phones. */
+    display: flex; align-items: center; gap: 12px; flex-wrap: nowrap;
+    overflow-x: auto; scrollbar-width: none;
     padding: 8px 14px;
     background: rgba(255,255,255,.82);
     border-bottom: 1px solid var(--c-line);
     backdrop-filter: blur(5px);
     font-size: .78rem; font-weight: 700; color: var(--c-ink-soft);
 }
+.bk-cr-stagebar::-webkit-scrollbar { display: none; }
+.bk-cr-stagebar > * { flex: 0 0 auto; white-space: nowrap; }
 .bk-cr-stagebar input[type="range"] { width: 130px; }
 .bk-cr-stagebar button {
     background: var(--c-panel); border: 1px solid var(--c-line); color: var(--c-ink-soft);
@@ -322,6 +328,32 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 @keyframes bkspin { to { transform: rotate(360deg); } }
 
 /* -------------------------------------------------------- responsive */
+/* ====================================================== touch sizing =======
+   Finger sizes depend on the INPUT, not on the layout: these apply on a phone
+   in either orientation, including the landscape case below that keeps the
+   side-by-side arrangement. Apple and Google both put the minimum target at
+   44-48 px. */
+@media (max-width: 940px) {
+    /* The way out must not be the smallest thing on screen. */
+    .bk-cr-back { width: 44px; height: 44px; flex: 0 0 44px; }
+
+    /* The stage bar's buttons measured 30-33 px high. */
+    .bk-cr-stagebar button { min-height: 44px; padding: 8px 14px; }
+    .bk-cr-undo, body.bk-creator .bk-ai-reset { min-height: 44px !important; }
+
+    .bk-cr-tab { min-height: 54px; font-size: .72rem; }
+    .bk-cr-tab svg { width: 23px; height: 23px; }
+    .bk-cr-shape { min-height: 52px; font-size: .8rem; }
+    .bk-cr-sw { min-height: 44px; }
+    .bk-cr-step { width: 44px; height: 44px; }
+    .bk-cr-row { grid-template-columns: 44px 1fr 44px; }
+    .bk-cr-root input[type="range"] { height: 40px; }
+    .bk-cr-psub, .bk-cr-hint, .bk-cr-note { font-size: .88rem; }
+    .bk-cr-panels { padding: 14px 16px 22px; }
+    .bk-cr-finish { padding: 11px 15px; }
+    .bk-cr-wordmark small { display: none; }
+}
+
 /* ------------------------------------------------------------ phone layout
    The picture is the default state and gets the whole screen. A tool opens a
    sheet only as tall as its content needs; it is dismissed explicitly, and the
@@ -331,7 +363,11 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
    The version before this kept the panel permanently open at 44vh and the order
    footer inside it: 221 px of a 614 px sheet went to a price the customer only
    needs at the end, and the mosaic never got more than a third of the screen. */
-@media (max-width: 940px) {
+/* The stacked layout needs HEIGHT, not just a narrow screen. A phone held
+   sideways (measured 844x390) left the picture 110 px and the sheet 140 px --
+   neither usable. Below 560 px of height the side-by-side arrangement is the
+   right one: such a screen is short but wide. */
+@media (max-width: 940px) and (min-height: 560px) {
     body.bk-creator { --c-rail: auto; --c-panelw: 100% !important; }
     .bk-cr-main {
         grid-template-columns: 1fr;
@@ -355,8 +391,11 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     body.bk-cr-sheet .bk-cr-side,
     body.bk-cr-order .bk-cr-side {
         height: auto;
-        max-height: min(62vh, calc(100vh - 250px));
-        max-height: min(62vh, calc(100dvh - 250px));
+        /* 250 px of reserve left only 110 px of picture on a 640 px phone;
+           290 px keeps 150 px there and changes nothing on a tall device,
+           where the 62vh cap is the binding one anyway. */
+        max-height: min(62vh, calc(100vh - 290px));
+        max-height: min(62vh, calc(100dvh - 290px));
         border-top: 1px solid var(--c-line);
         border-radius: 18px 18px 0 0;
         box-shadow: 0 -8px 26px rgba(26,42,27,.13);
@@ -433,6 +472,26 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     .bk-cr-finish { padding: 11px 15px; }
 }
 
+/* ------------------------------------------------------- phone, sideways ---
+   Short and wide: the side-by-side layout applies (see above), but it still has
+   to give the picture room. The header and the rail shrink, and the column is
+   capped by viewport WIDTH so a 667 px screen does not hand 360 px to the
+   controls. */
+@media (max-width: 940px) and (max-height: 559px) {
+    body.bk-creator {
+        --c-head: 54px;
+        --c-rail: 66px;
+        --c-panelw: clamp(260px, 40vw, 380px);
+    }
+    .bk-cr-tab { min-height: 46px; padding: 6px 2px 5px; }
+    .bk-cr-tab svg { width: 20px; height: 20px; }
+    .bk-cr-stagebar { padding: 5px 10px; }
+    .bk-cr-stagebar button { min-height: 38px; }
+    .bk-cr-panels { padding: 12px 14px 18px; }
+    /* the order footer would eat a short panel; its notice can go */
+    .bk-cr-foot .mosaic-order-hint { display: none; }
+}
+
 /* Narrow phones: measured at 390 px, the header wrapped "Mosaik-Editor" onto
    two lines, broke "199,00 EUR" mid-value and pushed "Fertig" off the right
    edge, while the stage bar ran past it entirely. Both bars are now single
@@ -447,9 +506,7 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     .bk-cr-chip b { white-space: nowrap; font-size: .9rem; }
     .bk-cr-finish { flex: 0 0 auto; padding: 11px 15px; font-size: .92rem; }
 
-    .bk-cr-stagebar { gap: 9px; padding: 7px 12px; overflow-x: auto; scrollbar-width: none; }
-    .bk-cr-stagebar::-webkit-scrollbar { display: none; }
-    .bk-cr-stagebar > * { flex: 0 0 auto; white-space: nowrap; }
+    .bk-cr-stagebar { gap: 9px; padding: 7px 12px; }
     .bk-cr-stagebar input[type="range"] { width: 96px; }
     .bk-cr-stagebar .bk-cr-spacer { margin-left: 0; }
 
@@ -768,3 +825,27 @@ body.bk-creator .bk-cr-tilecount {
     color: var(--c-ink-soft); line-height: 1.2;
 }
 body.bk-creator .bk-style-tile.active .bk-cr-tilecount { color: var(--c-accent-d); opacity: 1; }
+
+
+/* iOS Safari ZOOMS the page in when a focused field is under 16 px, and never
+   zooms back out. The chat field measured 14,4 px -- exactly that trap. This
+   sits at the end of the file on purpose: the KI block above sets .9rem with
+   the same specificity, so it has to come later to win. */
+@media (max-width: 940px) {
+    body.bk-creator .bk-ai-chat-input { font-size: 16px; }
+}
+
+
+/* Six tabs at a 62 px minimum need 372 px, so on a 360 px phone the last one
+   ("Malen") was cut off at the edge with nothing to suggest it scrolls. A tab
+   bar has to show all its tabs: below 430 px they share the width equally.
+   Height-gated, because in the sideways layout the rail is a COLUMN and
+   flex: 1 there would stretch the tabs vertically instead. */
+@media (max-width: 430px) and (min-height: 560px) {
+    .bk-cr-rail { overflow-x: hidden; gap: 0; padding-left: 3px; padding-right: 3px; }
+    .bk-cr-tab { flex: 1 1 0; min-width: 0; font-size: .66rem; }
+    .bk-cr-tab span {
+        display: block; width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+}
