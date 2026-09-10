@@ -3588,6 +3588,33 @@ document.getElementById("download-instructions-button").addEventListener("click"
             }
         });
 
+        window.BK_ADMIN = true;
+
+        /**
+         * Test prices for 16-stud plates. There is no WooCommerce variation
+         * behind these -- they exist so admin builds (instruction-PDF layout
+         * checks) get a plausible figure in the product card, never so they can
+         * be sold.
+         *
+         * The rate is taken from the real table, not invented: every 48er size
+         * from six plates upward costs 57,60 EUR per plate, and a 48er plate is
+         * 2304 studs, so the shop's own scale rate is exactly 0,025 EUR per
+         * stud (288x288 -> 82944 x 0,025 = 2073,60, table says 2074). Small
+         * sizes in the real table carry an entry premium on top; a floor of
+         * 19 EUR stands in for that here.
+         */
+        window.bkAdminPrice16 = function (w, h) {
+            return Math.max(19, Math.round(w * h * 0.025)).toFixed(2).replace(".", ",");
+        };
+        /** Register one 16er size on demand -- never all 324 at once. */
+        window.bkAdminRegister16 = function (w, h) {
+            var key = "16er_" + w + "x" + h;
+            if (!MOSAIC_VARIATIONS[key]) {
+                MOSAIC_VARIATIONS[key] = { vid: null, price: window.bkAdminPrice16(w, h), admin: true };
+            }
+            return key;
+        };
+
         // --- 16er plate option (admin-only) ---
         // Add 16 as a selectable step in both width and height selectors.
         // 16-stud plates use 16-stud increments; slider goes 16 → 288.
@@ -4197,7 +4224,10 @@ var MOSAIC_VARIATIONS = {
 function getMosaicVariationKey() {
     var w = Number(targetResolution[0]);
     var h = Number(targetResolution[1]);
-    var plate = PLATE_WIDTH === 32 ? '32er' : '48er';
+    // Name the plate we are actually on. The old two-way test folded the
+    // admin-only 16er into '48er', so a 16er build looked up a key that cannot
+    // exist and the product card fell back to the 69,00 default price.
+    var plate = PLATE_WIDTH + 'er';
     return plate + '_' + w + 'x' + h;
 }
 
@@ -4275,6 +4305,18 @@ if (orderMosaicBtn) {
         var statusEl = document.getElementById('mosaic-order-status');
         var btn = this;
 
+        // Admin test sizes (16er plates) have no WooCommerce variation, so there
+        // is nothing to put in a cart. Stop here rather than generating a PDF
+        // first and failing at the add-to-cart with a blank variation id.
+        var preflight = getMosaicVariationInfo();
+        if (preflight && !preflight.vid) {
+            if (statusEl) {
+                statusEl.className = 'mosaic-order-status bk-error';
+                statusEl.innerHTML = '\u26A0 Diese Größe ist eine Admin-Testgröße (16er-Platten) und nicht bestellbar.';
+            }
+            return;
+        }
+
         try {
             setOrderButtonState('adding');
 
@@ -4322,7 +4364,7 @@ if (orderMosaicBtn) {
 
             // Tell parent WordPress page to add product (variation) to cart
             var variationInfo = getMosaicVariationInfo();
-            var plateAttr = PLATE_WIDTH === 32 ? '32er' : '48er';
+            var plateAttr = PLATE_WIDTH + 'er'; // 16er never reaches here: blocked above
             var resAttr = Number(targetResolution[0]) + 'x' + Number(targetResolution[1]);
             var addFrame = isFrameEligible() && isFrameSelected() && !frameInCart;
             pendingFrameAdd = addFrame;

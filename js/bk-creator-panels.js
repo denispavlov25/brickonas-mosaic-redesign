@@ -260,7 +260,11 @@
 
         function variations() {
             var V = window.MOSAIC_VARIATIONS || {};
-            return Object.keys(V).map(function (k) {
+            return Object.keys(V).filter(function (k) {
+                // Admin test sizes are registered on demand and must not show up
+                // among the sizes a customer can buy.
+                return !V[k].admin;
+            }).map(function (k) {
                 var m = /^(\d+)er_(\d+)x(\d+)$/.exec(k);
                 if (!m) return null;
                 return { key: k, plate: +m[1], w: +m[2], h: +m[3], price: V[k].price };
@@ -300,6 +304,71 @@
                 sizeList.appendChild(card);
             });
         }
+        /* ------------------------------------------- ADMIN: 16er plates ----
+         * 16-stud plates exist only for checking instruction-PDF layouts, and
+         * they have no WooCommerce variation. Enumerating them as cards is out
+         * of the question -- 16 to 288 in 16-stud steps is 18 values per axis,
+         * i.e. 324 combinations -- so the admin gets the exact controls instead,
+         * which is also what the old slider offered. */
+        function buildAdminPlate16() {
+            if (!window.BK_ADMIN || typeof window.bkAdminRegister16 !== "function") return;
+
+            P.size.appendChild(el("p", "bk-cr-glabel", "Admin · 16er-Platten"));
+            P.size.appendChild(el("p", "bk-cr-note",
+                "Testgrößen für Anleitungs-Layouts. Es gibt dafür keine Shop-Variante — " +
+                "sie sind nicht bestellbar, der Preis ist gerechnet."));
+
+            var state = { w: 128, h: 80 };
+            var out = el("p", "bk-cr-swcount", "");
+
+            function stepper(label, key) {
+                var field = el("div", "bk-cr-field");
+                var lab = el("div", "bk-cr-flabel", "<span>" + label + "</span>");
+                var val = el("span", "bk-cr-fval", String(state[key]));
+                lab.appendChild(val);
+                var row = el("div", "bk-cr-row");
+                var dec = el("button", "bk-cr-step", "&minus;"), inc = el("button", "bk-cr-step", "+");
+                dec.type = inc.type = "button";
+                var range = document.createElement("input");
+                range.type = "range"; range.min = "16"; range.max = "288"; range.step = "16";
+                range.value = String(state[key]);
+                function set(v) {
+                    state[key] = Math.max(16, Math.min(288, Math.round(v / 16) * 16));
+                    range.value = val.textContent = String(state[key]);
+                    refresh();
+                }
+                dec.addEventListener("click", function () { set(state[key] - 16); });
+                inc.addEventListener("click", function () { set(state[key] + 16); });
+                range.addEventListener("input", function () { set(+range.value); });
+                row.append(dec, range, inc);
+                field.append(lab, row);
+                P.size.appendChild(field);
+            }
+
+            function refresh() {
+                var plates = (state.w / 16) * (state.h / 16);
+                out.innerHTML = cm(state.w) + " &times; " + cm(state.h) + " cm &middot; " +
+                    state.w + " &times; " + state.h + " Noppen &middot; " + plates + " Platten &middot; " +
+                    window.bkAdminPrice16(state.w, state.h) + " &euro; (gerechnet)";
+            }
+
+            stepper("Breite", "w");
+            stepper("Höhe", "h");
+            P.size.appendChild(out);
+
+            var apply = el("button", "bk-cr-finish", "16er-Größe anwenden");
+            apply.type = "button";
+            apply.style.width = "100%";
+            apply.style.justifyContent = "center";
+            apply.style.marginTop = "10px";
+            apply.addEventListener("click", function () {
+                window.bkAdminRegister16(state.w, state.h);
+                pickSize({ plate: 16, w: state.w, h: state.h });
+            });
+            P.size.appendChild(apply);
+            refresh();
+        }
+
         function plateCount(v) {
             var n = (v.w / v.plate) * (v.h / v.plate);
             return n === 1 ? "1 Platte" : n + " Platten";
@@ -696,12 +765,29 @@
             var ch = C.chips();
             var w = +document.getElementById("width-slider").value,
                 h = +document.getElementById("height-slider").value;
-            ch.size.querySelector("b").innerHTML =
-                (w * 0.8).toFixed(1).replace(".", ",") + " &times; " + (h * 0.8).toFixed(1).replace(".", ",") + " cm";
+            // Same formatting as the size cards: no pointless trailing ",0".
+            ch.size.querySelector("b").innerHTML = cm(w) + " &times; " + cm(h) + " cm";
             ch.studs.querySelector("b").textContent = w + " × " + h;
             var v = (window.MOSAIC_VARIATIONS || {})[currentKey()];
             ch.price.querySelector("b").innerHTML = v ? v.price + " &euro;" : "—";
             parkOrderCard();
+
+            // A 16er admin size has no variation to buy. Block the button, but
+            // only ever undo a block WE set -- index.js disables the same button
+            // while an order is in flight, and stamping over that would let a
+            // customer fire a second add-to-cart.
+            var ob = document.getElementById("order-mosaic-button");
+            if (ob) {
+                if (v && !v.vid) {
+                    ob.disabled = true;
+                    ob.dataset.bkTestBlock = "1";
+                    ob.title = "Admin-Testgröße (16er-Platten) — nicht bestellbar";
+                } else if (ob.dataset.bkTestBlock) {
+                    delete ob.dataset.bkTestBlock;
+                    ob.disabled = false;
+                    ob.title = "";
+                }
+            }
         }
         ["width-slider", "height-slider", "width-step-select", "height-step-select"].forEach(function (id) {
             var n = document.getElementById(id);
@@ -713,7 +799,7 @@
         // The old resolution card duplicates the new size cards — park it.
         [].forEach.call(document.querySelectorAll(".mosaic-controls-panel"), function (n) { attic.appendChild(n); });
 
-        renderSizes(); updateHead(); C.select("size");
+        renderSizes(); buildAdminPlate16(); updateHead(); C.select("size");
 
         // The app builds the order card only after the first mosaic is computed,
         // so polling once is not enough -- watch until it appears, then stop.

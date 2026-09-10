@@ -562,6 +562,10 @@ html.bk-embedded body.bk-creator .bk-cr-view canvas[id$="-upscaled"] {
 .bk-cr-foot .mosaic-product-price-row { display: flex; align-items: center; gap: 12px; margin: 0; }
 .bk-cr-foot .mosaic-product-price { font-size: 1.4rem; font-weight: 800; color: var(--c-accent-d); }
 .bk-cr-foot .mosaic-add-to-cart-btn { margin-left: auto; flex: 0 0 auto; }
+/* A blocked order button that still looks ready to click is a trap. */
+.bk-cr-foot .mosaic-add-to-cart-btn:disabled {
+    opacity: .45; cursor: not-allowed; filter: grayscale(.35);
+}
 .bk-cr-foot .mosaic-order-hint { margin-top: 10px; font-size: .72rem; line-height: 1.4; }
 .bk-cr-foot .mosaic-frame-addon { margin-top: 11px; }
 
