@@ -303,6 +303,36 @@
         if (sheetBtn) sheetBtn.setAttribute("aria-expanded", "false");
     }
 
+    /* ------------------------------------------------ way out, from second one
+       The editor shell is only built once a picture exists, so on the upload
+       screen there was no close button at all -- only the shop page's fallback,
+       which appears after four seconds in the far corner of the window and is
+       easy to miss entirely. This one is there immediately and sits ON the card,
+       where the eye already is. It disappears by itself once the editor mounts,
+       because the whole classic layer is hidden then. */
+    (function cardClose() {
+        if (!document.documentElement.classList.contains("bk-embedded")) return;
+        function attach() {
+            var card = document.getElementById("image-input-card");
+            if (!card) return false;
+            if (!card.querySelector(".bk-cr-cardclose")) {
+                var b = document.createElement("button");
+                b.type = "button";
+                b.className = "bk-cr-cardclose";
+                b.innerHTML = "&times;";
+                b.title = "Konfigurator schließen";
+                b.setAttribute("aria-label", b.title);
+                b.addEventListener("click", closeOverlay);
+                card.appendChild(b);
+            }
+            // Only now: the fallback in the shop page is the safety net for a
+            // frame that never got this far, so it must not be waved off early.
+            try { window.parent.postMessage({ bk: "mosaic-ready" }, "*"); } catch (e) { /* no parent */ }
+            return true;
+        }
+        if (!attach()) document.addEventListener("DOMContentLoaded", attach);
+    })();
+
     /** Ask the shop page to close the overlay; harmless when standalone. */
     function closeOverlay() {
         try { window.parent.postMessage({ bk: "mosaic-close" }, "*"); } catch (e) { /* no parent */ }

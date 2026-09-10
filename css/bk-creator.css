@@ -880,3 +880,23 @@ body.bk-creator .bk-style-tile.active .bk-cr-tilecount { color: var(--c-accent-d
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 }
+
+
+/* ------------------------------------------- close, on the upload card ----
+   Sits on the white card rather than in the window corner: on the upload
+   screen that corner is far from everything the customer is looking at. */
+html.bk-embedded #image-input-card { position: relative; }
+.bk-cr-cardclose {
+    position: absolute; top: 12px; right: 12px; z-index: 2;
+    display: grid; place-items: center;
+    width: 40px; height: 40px; padding: 0;
+    background: #F2F6F1; color: #2A352B;
+    border: 1px solid #DCE7DB; border-radius: 10px;
+    font-family: var(--bk-font-body, "Nunito", sans-serif);
+    font-size: 1.4rem; line-height: 1; cursor: pointer;
+    transition: background .18s ease, border-color .18s ease;
+}
+.bk-cr-cardclose:hover { background: #E7EFE6; border-color: #C7DCC6; }
+@media (max-width: 940px) {
+    .bk-cr-cardclose { width: 44px; height: 44px; top: 10px; right: 10px; }
+}
