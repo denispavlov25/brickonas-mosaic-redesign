@@ -2903,7 +2903,9 @@ document.addEventListener("bk-pdf-progress", function (e) {
     if (!el) return;
     if (d.done) { return; }   // the order flow writes its own final message
     el.className = "mosaic-order-status bk-sending";
-    el.innerHTML = "\u23F3 Anleitung wird erstellt \u2014 " + d.pct + " %"
+    // textContent, not innerHTML: this fires once per PDF page (~1330 times on a
+    // 288x288 order) and there is no markup in the string to parse.
+    el.textContent = "\u23F3 Anleitung wird erstellt \u2014 " + d.pct + " %"
         + (d.label ? " (" + d.label + ")" : "");
 });
 

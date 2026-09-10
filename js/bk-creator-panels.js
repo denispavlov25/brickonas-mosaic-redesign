@@ -126,14 +126,15 @@
               '<p class="bk-cr-pdf-warn">Bitte die Seite nicht schließen.</p>' +
             "</div>";
         view.appendChild(pdfOverlay);
+        // Looked up once: a 288x288 export fires this ~1330 times.
+        var pdfBar = pdfOverlay.querySelector("#bk-cr-pdf-bar");
+        var pdfSub = pdfOverlay.querySelector("#bk-cr-pdf-sub");
         document.addEventListener("bk-pdf-progress", function (e) {
             var d = e.detail || {};
             if (d.done) { pdfOverlay.hidden = true; return; }
             pdfOverlay.hidden = false;
-            var bar = document.getElementById("bk-cr-pdf-bar");
-            var sub = document.getElementById("bk-cr-pdf-sub");
-            if (bar) bar.style.width = d.pct + "%";
-            if (sub) sub.textContent = d.label ? d.label + " · " + d.pct + " %" : d.pct + " %";
+            if (pdfBar) pdfBar.style.width = d.pct + "%";
+            if (pdfSub) pdfSub.textContent = d.label ? d.label + " · " + d.pct + " %" : d.pct + " %";
         });
 
         var shownArea = null, currentTab = "size";
@@ -200,7 +201,7 @@
         function nextButton() {
             return document.getElementById("create-mosaic-btn");
         }
-        var recalcTimer = null;
+        var recalcTimer = null, recalcPoll = null;
         function recalc() {
             var b = nextButton();
             if (!b) return;
@@ -208,11 +209,23 @@
             showBusy(true);
             b.click();
             // The pipeline is async and yields paint frames; watch for a result.
+            //
+            // Single-flight on purpose. Each call used to open its OWN 500 ms
+            // watcher and nothing ever closed the previous one, so three clicks
+            // left three watchers running for up to 240 ticks (two minutes) each
+            // -- and whichever saw an idle spinner first cleared the wait
+            // indicator, even while another run was still going.
+            if (recalcPoll) clearInterval(recalcPoll);
             var tries = 0;
-            var poll = setInterval(function () {
+            recalcPoll = setInterval(function () {
                 tries++;
                 var done = !document.querySelector(".show-spinner");
-                if (done || tries > 240) { clearInterval(poll); busy.classList.remove("on"); showBusy(false); }
+                if (done || tries > 240) {
+                    clearInterval(recalcPoll);
+                    recalcPoll = null;
+                    busy.classList.remove("on");
+                    showBusy(false);
+                }
             }, 500);
         }
         document.getElementById("bk-cr-recalc").addEventListener("click", recalc);
@@ -311,6 +324,7 @@
             list.forEach(function (v) {
                 var card = el("button", "bk-cr-size-card");
                 card.type = "button";
+                card.dataset.key = v.key;
                 card.setAttribute("aria-pressed", v.key === cur ? "true" : "false");
                 card.innerHTML =
                     plateIcon(v) +
@@ -424,19 +438,46 @@
                    ",1fr);grid-template-rows:repeat(" + rows + ',1fr)">' + cells + "</span></span>";
         }
 
+        /**
+         * Only the selection changes when a card is clicked, so only the selection
+         * is written. renderSizes() rebuilt all sixteen cards including their
+         * plate grids (measured 2,5 ms and ~180 elements) to move one attribute.
+         */
+        function markSelected() {
+            var cur = currentKey();
+            [].forEach.call(sizeList.children, function (c) {
+                c.setAttribute("aria-pressed", c.dataset.key === cur ? "true" : "false");
+            });
+        }
+
         function pickSize(v) {
             ["width-step-select", "height-step-select"].forEach(function (id) {
                 var s = document.getElementById(id);
                 if (s && s.value !== String(v.plate)) { s.value = String(v.plate); s.dispatchEvent(new Event("change", { bubbles: true })); }
             });
-            [["width-slider", v.w], ["height-slider", v.h]].forEach(function (p2) {
-                var s = document.getElementById(p2[0]);
-                if (!s) return;
-                s.value = String(p2[1]);
-                s.dispatchEvent(new Event("input", { bubbles: true }));
-                s.dispatchEvent(new Event("change", { bubbles: true }));
-            });
-            renderSizes(); updateHead();
+            /*
+             * Set both values FIRST, then fire the events -- and fire "change"
+             * only once.
+             *
+             * Firing input+change on each slider ran the app's
+             * handleResolutionChange() FOUR times per card click, and that
+             * routine rebuilds Cropper.js every time: measured 4 rebuilds and
+             * 86 ms of the 88 ms a click cost. The end state is identical with
+             * one run, because the "input" handler already writes BOTH
+             * targetResolution entries and both labels from the sliders' current
+             * values -- so width's own "change" adds nothing once the values are
+             * in place.
+             */
+            var ws = document.getElementById("width-slider"),
+                hs = document.getElementById("height-slider");
+            if (ws) ws.value = String(v.w);
+            if (hs) hs.value = String(v.h);
+            if (ws) ws.dispatchEvent(new Event("input", { bubbles: true }));
+            if (hs) {
+                hs.dispatchEvent(new Event("input", { bubbles: true }));
+                hs.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            markSelected(); updateHead();
             // Show the wait NOW, not when the debounce finally fires: the click
             // is the moment the customer starts waiting, and the ~1,2 s until
             // the recompute begins is otherwise completely silent.
