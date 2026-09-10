@@ -35,9 +35,12 @@ body.bk-creator {
    that inside this editor an AI run (model download, background removal, a chat
    edit) showed nothing at all for several seconds. It stays. */
 body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic):not(#loading-overlay) { display: none !important; }
-/* ...except while the editor is showing its own wait on the picture, so a
-   recompute never stacks two spinners. */
-body.bk-creator.bk-cr-busy #loading-overlay { display: none !important; }
+/* ...but ONLY for the AI runs, which have no substitute here. For mosaic work
+   and the PDF this editor draws its own wait on the picture, and letting the
+   full-screen one through as well produced a white flash on every size change:
+   a heavy op raises it with `immediate`, i.e. instantly at full opacity, and it
+   is a viewport-sized pane of rgba(244,249,244,.66) with a backdrop blur. */
+body.bk-creator #loading-overlay:not(.bk-ai-raised) { display: none !important; }
 .bk-cr-attic { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 
 .bk-cr-root {

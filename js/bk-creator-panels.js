@@ -100,9 +100,6 @@
         function showBusy(on) {
             overlay.hidden = !on;
             view.classList.toggle("is-stale", !!on);
-            // Tell the stylesheet we own the waiting state, so the app's own
-            // full-screen loader stands down for this one.
-            document.body.classList.toggle("bk-cr-busy", !!on);
             if (on) {
                 var sub = document.getElementById("bk-cr-busy-sub");
                 if (sub) {
@@ -439,7 +436,12 @@
                 s.dispatchEvent(new Event("input", { bubbles: true }));
                 s.dispatchEvent(new Event("change", { bubbles: true }));
             });
-            renderSizes(); updateHead(); maybeAutoRecalc();
+            renderSizes(); updateHead();
+            // Show the wait NOW, not when the debounce finally fires: the click
+            // is the moment the customer starts waiting, and the ~1,2 s until
+            // the recompute begins is otherwise completely silent.
+            showBusy(true);
+            maybeAutoRecalc();
         }
 
         /* -------------------------------------------------- ZUSCHNITT tab */

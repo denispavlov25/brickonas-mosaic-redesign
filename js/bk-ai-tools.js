@@ -812,6 +812,10 @@
       if (t) t.innerHTML = _busyTitle || tr("aiBusyTitle");
       if (s) s.innerHTML = _busySub || tr("aiBusySub");
       ov.classList.remove("hidden");
+      // Mark WHO raised it. The new editor draws its own wait on the picture for
+      // mosaic work, so it suppresses this full-screen one -- but the AI runs
+      // have no such substitute and must still be able to show it.
+      ov.classList.add("bk-ai-raised");
       // bk-instant kills the fade so the spinner is on-screen before any
       // synchronous compute can stutter the first frame.
       ov.classList.add("bk-instant");
@@ -821,6 +825,7 @@
       ov.classList.add("hidden");
       ov.classList.remove("show-spinner");
       ov.classList.remove("bk-instant");
+      ov.classList.remove("bk-ai-raised");
     }
   }
 
