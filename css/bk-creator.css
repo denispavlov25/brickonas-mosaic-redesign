@@ -30,7 +30,14 @@ body.bk-creator {
     --c-head:     66px;
     margin: 0; background: var(--c-bg); overflow: hidden;
 }
-body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic) { display: none !important; }
+/* #loading-overlay is the app's UNIVERSAL busy indicator -- every AI operation
+   and every heavy compute raises it. Hiding it along with the old wizard meant
+   that inside this editor an AI run (model download, background removal, a chat
+   edit) showed nothing at all for several seconds. It stays. */
+body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic):not(#loading-overlay) { display: none !important; }
+/* ...except while the editor is showing its own wait on the picture, so a
+   recompute never stacks two spinners. */
+body.bk-creator.bk-cr-busy #loading-overlay { display: none !important; }
 .bk-cr-attic { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 
 .bk-cr-root {
@@ -469,6 +476,18 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     pointer-events: none; padding: 20px;
 }
 .bk-cr-stale[hidden] { display: none; }
+/* the PDF wait sits above the recompute wait -- it is the longer of the two */
+.bk-cr-stale--pdf { z-index: 3; }
+.bk-cr-bar {
+    height: 7px; margin: 13px 0 0; border-radius: 4px;
+    background: #E3EAE2; overflow: hidden;
+}
+.bk-cr-bar i {
+    display: block; height: 100%; width: 0;
+    background: var(--c-accent); border-radius: 4px;
+    transition: width .25s ease;
+}
+.bk-cr-pdf-warn { margin: 9px 0 0; font-size: .74rem; color: var(--c-ink-soft); }
 .bk-cr-stale-card {
     pointer-events: auto; text-align: center; max-width: 330px;
     background: var(--c-panel); border: 1px solid var(--c-line);

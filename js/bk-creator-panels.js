@@ -100,6 +100,9 @@
         function showBusy(on) {
             overlay.hidden = !on;
             view.classList.toggle("is-stale", !!on);
+            // Tell the stylesheet we own the waiting state, so the app's own
+            // full-screen loader stands down for this one.
+            document.body.classList.toggle("bk-cr-busy", !!on);
             if (on) {
                 var sub = document.getElementById("bk-cr-busy-sub");
                 if (sub) {
@@ -108,6 +111,33 @@
                 }
             }
         }
+
+        /* ------------------------------------------- PDF progress overlay ----
+         * Building the instruction PDF is the longest thing this editor does --
+         * measured at ~40 s for one admin export -- and until now it showed a
+         * disabled button and nothing else. Its own progress bar was written to
+         * an element inside a display:none block. This one sits on the picture,
+         * where the other waiting states already live. */
+        var pdfOverlay = el("div", "bk-cr-stale bk-cr-stale--pdf");
+        pdfOverlay.hidden = true;
+        pdfOverlay.innerHTML =
+            '<div class="bk-cr-stale-card">' +
+              '<span class="bk-cr-spinner" aria-hidden="true"></span>' +
+              "<b>Anleitung wird erstellt</b>" +
+              '<p id="bk-cr-pdf-sub">Das kann bei großen Mosaiks bis zu einer Minute dauern.</p>' +
+              '<div class="bk-cr-bar"><i id="bk-cr-pdf-bar"></i></div>' +
+              '<p class="bk-cr-pdf-warn">Bitte die Seite nicht schließen.</p>' +
+            "</div>";
+        view.appendChild(pdfOverlay);
+        document.addEventListener("bk-pdf-progress", function (e) {
+            var d = e.detail || {};
+            if (d.done) { pdfOverlay.hidden = true; return; }
+            pdfOverlay.hidden = false;
+            var bar = document.getElementById("bk-cr-pdf-bar");
+            var sub = document.getElementById("bk-cr-pdf-sub");
+            if (bar) bar.style.width = d.pct + "%";
+            if (sub) sub.textContent = d.label ? d.label + " · " + d.pct + " %" : d.pct + " %";
+        });
 
         var shownArea = null, currentTab = "size";
         function lift(area) {

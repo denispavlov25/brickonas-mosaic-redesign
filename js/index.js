@@ -2876,6 +2876,37 @@ async function getMosaicUploaderConfig() {
 }
 
 // Generate PDF as Blob (same logic as download flow but returns blob instead of saving).
+/**
+ * Progress reporting for the two long jobs in this app: building the
+ * instruction PDF for an order and building it for the admin download. Both
+ * already fed a progress bar -- but that bar lives inside a display:none block
+ * ("download UI removed"), so a customer watched a disabled button for up to a
+ * minute with nothing else happening. The events let any UI show real progress
+ * without this code knowing which UI is on screen.
+ */
+function bkPdfProgress(pct, label, src) {
+    document.dispatchEvent(new CustomEvent("bk-pdf-progress", {
+        detail: { pct: Math.max(0, Math.min(100, Math.round(pct))), label: label || "", src: src || "order" }
+    }));
+}
+function bkPdfProgressDone() {
+    document.dispatchEvent(new CustomEvent("bk-pdf-progress", { detail: { done: true } }));
+}
+
+// The order flow already owns a status line inside the product card, and that
+// line exists in the classic wizard too -- so the progress is written there as
+// well as broadcast, and every interface gets at least a live text.
+document.addEventListener("bk-pdf-progress", function (e) {
+    var d = e.detail || {};
+    if (d.src !== "order") return;
+    var el = document.getElementById("mosaic-order-status");
+    if (!el) return;
+    if (d.done) { return; }   // the order flow writes its own final message
+    el.className = "mosaic-order-status bk-sending";
+    el.innerHTML = "\u23F3 Anleitung wird erstellt \u2014 " + d.pct + " %"
+        + (d.label ? " (" + d.label + ")" : "");
+});
+
 async function generateInstructionsAsBlob() {
     await ensureJsPDF();
     const instructionsCanvasContainer = document.getElementById("instructions-canvas-container");
@@ -2884,12 +2915,15 @@ async function generateInstructionsAsBlob() {
 
     // step4Canvas is not auto-populated until runStep4 is called.
     // Wrap the full generation in runStep4 to ensure all pixel data is ready.
+    bkPdfProgress(2, "Mosaik wird vorbereitet");
     return new Promise((resolve, reject) => {
         runStep4(async () => {
             try {
                 const blob = await _generateBlobFromStep4();
+                bkPdfProgressDone();
                 resolve(blob);
             } catch (err) {
+                bkPdfProgressDone();
                 reject(err);
             }
         });
@@ -2990,6 +3024,8 @@ async function _generateBlobFromStep4() {
     const useVector = typeof window.bkDrawInstructionPageVector === "function";
     for (var i = 0; i < totalPlates; i++) {
         await sleep(10);
+        // 5..92 % across the plates; the rest is the title page and the encode.
+        bkPdfProgress(5 + (87 * i) / totalPlates, "Platte " + (i + 1) + " von " + totalPlates);
         pdf.addPage();
         const subPixelArray = getSubPixelArray(resultImage, i, targetResolution[0], PLATE_WIDTH);
         const row = Math.floor((i * PLATE_WIDTH) / targetResolution[0]);
@@ -3019,10 +3055,17 @@ async function _generateBlobFromStep4() {
         const blocksPerSide = PLATE_WIDTH / BLOCK_SIZE;
         if (blocksPerSide > 1 && Number.isInteger(blocksPerSide)) {
             let blockIdx = 0;
+            const blocksTotal = blocksPerSide * blocksPerSide;
             for (let br = 0; br < blocksPerSide; br++) {
                 for (let bc = 0; bc < blocksPerSide; bc++) {
                     blockIdx++;
                     await sleep(10);
+                    // One plate is 1 + blocksPerSide^2 pages (36 detail pages on a
+                    // 48er), so reporting only per plate left the bar frozen for
+                    // most of the run -- exactly the "is it stuck?" it exists to
+                    // answer. Report inside the plate too.
+                    bkPdfProgress(5 + (87 * (i + blockIdx / blocksTotal)) / totalPlates,
+                        "Platte " + (i + 1) + " von " + totalPlates + " · Detail " + blockIdx + "/" + blocksTotal);
                     pdf.addPage();
                     const blockArray = getSubBlockFromPlate(subPixelArray, PLATE_WIDTH, bc, br, BLOCK_SIZE);
                     const blockVariableDims = variablePixelPieceDimensionsForPage == null
@@ -3055,6 +3098,7 @@ async function _generateBlobFromStep4() {
         }
     }
     addWaterMark(pdf, isHighQuality);
+    bkPdfProgress(95, "Anleitung wird zusammengesetzt");
     return pdf.output("blob");
 }
 
@@ -3204,6 +3248,7 @@ async function generateInstructions() {
         document.getElementById("pdf-progress-bar").style.width = "0%";
         document.getElementById("pdf-progress-container").hidden = false;
         document.getElementById("download-instructions-button").hidden = true;
+        bkPdfProgress(3, "Seiten werden vorbereitet", "download");
 
         // Fit-center the title image on the page (matches the order-upload path and
         // the vector pages' placement so every page lines up identically).
@@ -3363,6 +3408,7 @@ async function generateInstructions() {
             }
 
             document.getElementById("pdf-progress-bar").style.width = `${((p + 2) * 100) / (pageJobs.length + 1)}%`;
+            bkPdfProgress(((p + 2) * 100) / (pageJobs.length + 1), "Seite " + (p + 2) + " von " + (pageJobs.length + 1), "download");
 
             const job = pageJobs[p];
             renderPageToPdf(job.pixels, job.width, job.label, job.variableDims, job.overviewContext, job.scalingOverride, job.legendScalingOverride);
@@ -3372,6 +3418,7 @@ async function generateInstructions() {
         pdf.save(numParts > 1 ? `${t('pdfFilename')}-${t('pdfInstructions')}-${t('pdfPart')}-${numParts}.pdf` : `${t('pdfFilename')}-${t('pdfInstructions')}.pdf`);
         document.getElementById("pdf-progress-container").hidden = true;
         document.getElementById("download-instructions-button").hidden = false;
+        bkPdfProgressDone();
         enableInteraction();
 
         if (perfLoggingDatabase) {
@@ -3383,6 +3430,7 @@ async function generateInstructions() {
             console.error("Error generating PDF instructions:", error);
             document.getElementById("pdf-progress-container").hidden = true;
             document.getElementById("download-instructions-button").hidden = false;
+            bkPdfProgressDone();
             enableInteraction();
             alert("Die Anleitung konnte nicht erstellt werden. Bei sehr hohen Auflösungen hilft es, eine kleinere Auflösung zu wählen oder es noch einmal zu versuchen.");
         }
