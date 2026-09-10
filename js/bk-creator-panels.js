@@ -879,6 +879,11 @@
 
         renderSizes(); buildAdminPlate16(); updateHead(); C.select("size");
 
+        // On a phone the editor opens with the Größe sheet up. Closed, the six
+        // icons at the bottom do not read as "tap me" -- the customer arrives
+        // from picking a photo and sees only a picture and a row of symbols.
+        if (C.isPhone()) C.sheet(true);
+
         // The app builds the order card only after the first mosaic is computed,
         // so polling once is not enough -- watch until it appears, then stop.
         if (!parkOrderCard() && window.MutationObserver) {

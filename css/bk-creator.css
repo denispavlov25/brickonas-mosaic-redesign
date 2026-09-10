@@ -386,7 +386,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     /* ---- the sheet: closed by default, as tall as it needs when open ---- */
     .bk-cr-side {
         height: 0; overflow: hidden; border-right: 0; border-top: 0;
-        grid-template-rows: auto auto auto;
+        /* the MIDDLE row takes the slack: with three auto rows a grid stretches
+           them all, which pulled the sheet header apart in full-height mode */
+        grid-template-rows: auto 1fr auto;
     }
     body.bk-cr-sheet .bk-cr-side,
     body.bk-cr-order .bk-cr-side {
@@ -406,12 +408,30 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 
     .bk-cr-grab {
         display: none; position: relative; align-items: center; justify-content: flex-end;
-        width: 100%; min-height: 48px; padding: 12px 16px 8px;
+        /* room on the left for the height toggle, which is absolutely placed
+           there -- without it the arrow sat on top of the panel title */
+        width: 100%; min-height: 48px; padding: 12px 16px 8px 58px;
         background: none; border: 0; border-bottom: 1px solid var(--c-line);
         cursor: pointer; font: inherit; font-size: .88rem; font-weight: 800;
         color: var(--c-accent-d);
     }
     body.bk-cr-sheet .bk-cr-grab, body.bk-cr-order .bk-cr-grab { display: flex; }
+
+    /* Full height: the picture steps aside entirely and the tool gets the
+       screen. The rail stays, so the customer can still switch tools and get
+       back. */
+    body.bk-cr-full .bk-cr-main { grid-template-rows: 0 1fr auto; }
+    body.bk-cr-full .bk-cr-side { height: auto !important; max-height: none !important; }
+    body.bk-cr-full .bk-cr-stage { display: none; }
+
+    .bk-cr-grow2 {
+        position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+        display: grid; place-items: center; width: 44px; height: 44px;
+        background: none; border: 0; border-radius: 10px; cursor: pointer;
+        color: var(--c-ink-soft); font-size: 1rem; line-height: 1;
+    }
+    .bk-cr-grow2:hover { background: var(--c-bg); }
+    .bk-cr-grab { position: relative; }
     .bk-cr-grab i {
         position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
         width: 42px; height: 4px; border-radius: 2px; background: var(--c-line-2);
@@ -436,9 +456,13 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
     }
     .bk-cr-sizes::-webkit-scrollbar { display: none; }
     .bk-cr-size-card {
-        flex: 0 0 258px; scroll-snap-align: start;
-        grid-template-columns: 42px 1fr; padding: 11px 12px; min-height: 62px;
+        /* 258 px left the longest pair ("115,2 x 153,6 cm" + "691,00 EUR")
+           with the whole 10 px gap eaten: 110 + 61 + 10 against 176 px of
+           text width. Wider card, wider gap. */
+        flex: 0 0 286px; scroll-snap-align: start;
+        grid-template-columns: 42px 1fr; padding: 11px 13px; min-height: 62px;
     }
+    .bk-cr-size-top { gap: 16px; }
     /* Nothing here may wrap -- at 224 px the price dropped onto its own line
        and the plate/stud line onto a third, and the strip lost its rhythm. */
     .bk-cr-size-top { flex-wrap: nowrap; }
@@ -530,6 +554,13 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
    is reassurance that the roughly two-second wait is work, not a freeze. The
    message sits ON the picture, where the change is expected. */
 .bk-cr-view { position: relative; }
+/* The mosaic canvas carries the paintbrush handlers, and they were live on
+   every tab: on a touch screen that meant a swipe painted studs instead of
+   scrolling the picture. Only the Malen tab hands the canvas its events back;
+   everywhere else the gesture reaches the scroll container underneath. */
+body.bk-creator .bk-cr-view canvas[id$="-upscaled"] { pointer-events: none; }
+body.bk-creator.bk-cr-paint .bk-cr-view canvas[id$="-upscaled"] { pointer-events: auto; }
+.bk-cr-view { -webkit-overflow-scrolling: touch; }
 .bk-cr-view.is-stale canvas[id$="-upscaled"] { filter: grayscale(.55) opacity(.42); }
 .bk-cr-stale {
     position: absolute; inset: 0; display: grid; place-items: center;

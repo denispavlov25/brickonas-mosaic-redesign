@@ -71,7 +71,7 @@
         { id: "paint",  label: "Malen",     icon: ICON.paint,  accent: ACCENT, soft: ACCENT_SOFT }
     ];
 
-    var root, attic, panels = {}, view, stagebar, foot, grip, sheetBtn, chips = {};
+    var root, attic, panels = {}, view, stagebar, foot, grip, sheetBtn, fullBtn, chips = {};
     var PANEL_MIN = 320, PANEL_MAX = 680, PANEL_KEY = "bkCrPanelW";
 
     function buildShell() {
@@ -122,6 +122,17 @@
         sheetBtn.type = "button";
         sheetBtn.setAttribute("aria-expanded", "false");
         sheetBtn.addEventListener("click", function () { closeSheets(); });
+        // Sits INSIDE the grab bar but is its own button, so the bar can keep
+        // being the close action while this one only changes the height.
+        fullBtn = el("button", "bk-cr-grow2", "&#9650;");
+        fullBtn.type = "button";
+        fullBtn.title = "Auf volle Höhe";
+        fullBtn.setAttribute("aria-label", fullBtn.title);
+        fullBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            toggleFull();
+        });
+        sheetBtn.appendChild(fullBtn);
         var body = el("div", "bk-cr-panels");
         // The order card lives in a footer that does NOT scroll: price and
         // "Bestellen" stay in view while the size list above is scrolled.
@@ -275,8 +286,20 @@
         if (sheetBtn) sheetBtn.setAttribute("aria-expanded", on ? "true" : "false");
     }
 
+    /** The sheet has two heights: as tall as its content, or the whole screen. */
+    function toggleFull(force) {
+        var on = typeof force === "boolean" ? force : !document.body.classList.contains("bk-cr-full");
+        document.body.classList.toggle("bk-cr-full", on);
+        if (fullBtn) {
+            fullBtn.innerHTML = on ? "&#9660;" : "&#9650;";
+            fullBtn.title = on ? "Bild wieder zeigen" : "Auf volle Höhe";
+            fullBtn.setAttribute("aria-label", fullBtn.title);
+        }
+    }
+
     function closeSheets() {
         document.body.classList.remove("bk-cr-sheet", "bk-cr-order");
+        toggleFull(false);
         if (sheetBtn) sheetBtn.setAttribute("aria-expanded", "false");
     }
 
@@ -293,6 +316,7 @@
             tabs[i].tabIndex = on ? 0 : -1;
             panels[t.id].hidden = !on;
         });
+        document.body.classList.toggle("bk-cr-paint", id === "paint");
         if (typeof window.bkCrShowStage === "function") window.bkCrShowStage(id);
         // The sheet header carries the title on a phone, so the panel's own
         // heading can step aside instead of repeating the tab underneath it.
@@ -321,6 +345,7 @@
         stagebar: function () { return stagebar; },
         foot:   function () { return foot; },
         sheet:  toggleSheet,
+        full:   toggleFull,
         order:  orderSheet,
         isPhone: function () { return window.matchMedia("(max-width: 940px)").matches; },
         chips:  function () { return chips; }
