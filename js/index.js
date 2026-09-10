@@ -4675,6 +4675,12 @@ function goToStep(stepNumber) {
         return null;
     }
 
+    // Exposed so the editor can tell the customer, BEFORE they click a tile,
+    // how many brick colours a style works with. A style IS a palette here --
+    // applying one replaces the allowed stud map -- and hiding that number is
+    // what made the colour count look like it jumped on its own.
+    window.BK_STYLE_PALETTES = BK_STYLE_PALETTES;
+
     function buildStudMapFromHexList(hexList) {
         // Filter against the active palette so hidden colours (and any typos)
         // are silently dropped. Each entry counts as "infinite" so the colour

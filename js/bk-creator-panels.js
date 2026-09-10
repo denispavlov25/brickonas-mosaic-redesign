@@ -355,8 +355,10 @@
 
         /* ----------------------------------------------------- FARBEN tab */
         C.heading(P.color, "Steine", "Welche Klemmbaustein-Farben verwendet werden dürfen.");
+        var paletteNote = el("p", "bk-cr-note");
+        paletteNote.hidden = true;
         var paletteBox = el("div"), paletteCount = el("p", "bk-cr-swcount", "");
-        P.color.append(paletteBox, paletteCount);
+        P.color.append(paletteNote, paletteBox, paletteCount);
         var presetBtn = document.getElementById("select-starting-custom-stud-map-button");
         if (presetBtn) {
             var wrap = el("div"); wrap.style.marginBottom = "14px";
@@ -369,10 +371,31 @@
             var body = document.getElementById("custom-stud-table-body");
             return body ? [].slice.call(body.children) : [];
         }
+        /** "rgb(46, 125, 50)" -> "#2e7d32", so rows can be compared with the
+         *  hex lists the style presets are written in. */
+        function rgbToHex(rgb) {
+            var m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(rgb || "");
+            if (!m) return null;
+            return "#" + [1, 2, 3].map(function (i) {
+                return ("0" + (+m[i]).toString(16)).slice(-2);
+            }).join("");
+        }
+
+        // The full set the customer started with. Everything else is a subset of
+        // it, so it is the honest denominator for "x von y".
+        var basePalette = null;
+
+        function activeStyleName() {
+            var t = document.querySelector(".bk-style-tile.active .bk-style-tile-label");
+            var n = t ? t.textContent.trim() : "";
+            return (n && n !== "Original") ? n : "";
+        }
+
         function renderPalette() {
             var rows = paletteRows();
             paletteBox.innerHTML = "";
             var grid = el("div", "bk-cr-swatches");
+            var hexes = [];
             rows.forEach(function (row) {
                 var chip = row.querySelector("button div[style*='background']");
                 if (!chip) return;
@@ -385,14 +408,50 @@
                 b.setAttribute("aria-pressed", "true");
                 b.addEventListener("click", function () {
                     var x = row.querySelector('button[type="submit"], button.btn-danger, td:last-child button');
-                    if (x) { x.click(); setTimeout(function () { renderPalette(); maybeAutoRecalc(); }, 120); }
+                    // The observer below re-renders as soon as the row is gone.
+                    if (x) { x.click(); maybeAutoRecalc(); }
                 });
                 grid.appendChild(b);
+                var h = rgbToHex(chip.style.backgroundColor);
+                if (h) hexes.push(h);
             });
             paletteBox.appendChild(grid);
-            paletteCount.textContent = rows.length + " Farben aktiv · Klick entfernt eine Farbe";
+
+            if (basePalette === null && rows.length) basePalette = hexes.slice();
+
+            paletteCount.textContent = rows.length + " Steinfarben aktiv · Klick entfernt eine Farbe";
+
+            // Say WHY the number changed. Without this the count looked as if it
+            // moved on its own the moment a style was picked. Deliberately
+            // "tauscht", not "begrenzt": a style is NOT a subset of the current
+            // list -- measured, "Warm" brings 4 colours (#ffa531, #fa5947,
+            // #532115, #dd982e) that the default 35 do not contain.
+            var st = activeStyleName();
+            paletteNote.hidden = !st;
+            if (st) {
+                // No count in this sentence: after a manual removal the current
+                // number is no longer "the style's own" one, and the line right
+                // below already states it.
+                paletteNote.textContent = "Der Stil „" + st + "“ hat die Palette gegen seine eigene "
+                    + "Auswahl getauscht — auch Farben, die vorher nicht in der Liste standen. "
+                    + "Über „Stil → Original“ kommen deine "
+                    + (basePalette ? basePalette.length : rows.length) + " zurück.";
+            }
         }
         renderPalette();
+
+        /**
+         * A style REPLACES the palette (see applyStyleStudMap in index.js), and
+         * the preset dropdown rewrites the same table. Re-reading it only after a
+         * swatch click meant the panel kept showing the old colours: after "Warm"
+         * it still offered 35 chips while the real palette held 18, and the first
+         * click then made the count jump from 35 to 17. Watch the table instead.
+         */
+        var studBody = document.getElementById("custom-stud-table-body");
+        if (studBody && window.MutationObserver) {
+            new MutationObserver(function () { renderPalette(); })
+                .observe(studBody, { childList: true });
+        }
 
         /* --------------------------------------------------- ANPASSEN tab */
         /* ------------------------------------------------------- STIL tab
@@ -407,6 +466,10 @@
         var stylePicker = q("#bk-style-picker");
         if (stylePicker) P.style.appendChild(stylePicker);
         else P.style.appendChild(el("p", "bk-cr-hint", "Stil-Vorlagen stehen bereit, sobald das Mosaik berechnet ist."));
+
+        P.style.appendChild(el("p", "bk-cr-hint",
+            "Eine Vorlage tauscht die Steinfarben aus, mit denen gebaut wird — nicht das Foto. "
+            + "Welche gerade aktiv sind, steht unter „Steine“."));
 
         P.style.appendChild(el("p", "bk-cr-glabel", "Feinjustierung"));
         [["brightness", "Helligkeit"], ["contrast", "Kontrast"], ["saturation", "Sättigung"],
@@ -457,6 +520,48 @@
                 document.dispatchEvent(new CustomEvent("bk-visual-step-change", { detail: { step: 2 } }));
             }
             if (styleAnnounced && stylePicker.hidden) stylePicker.hidden = false;
+            annotateStyleTiles();
+        }
+
+        /**
+         * Put the palette size on every tile. A style here is not a filter over
+         * the photo, it IS the set of bricks the mosaic may use -- so the number
+         * of colours is the single most useful thing a tile can say, and saying
+         * it up front is what stops the count in "Steine" from looking like it
+         * moved on its own.
+         */
+        var tilesAnnotated = false;
+        function annotateStyleTiles() {
+            if (tilesAnnotated) return;
+            var tiles = document.querySelectorAll(".bk-style-tile");
+            if (!tiles.length || !basePalette) return;
+            var lists = window.BK_STYLE_PALETTES || {};
+            // The same filter buildStudMapFromHexList applies: a preset colour
+            // counts if it is a real brick colour at all -- NOT if it happens to
+            // be in the list that is active right now. Filtering against the
+            // current 35 gave 14 for "Warm" where 18 are actually applied.
+            var stock = null;
+            if (typeof window.ALL_BRICKLINK_SOLID_COLORS !== "undefined") {
+                stock = {};
+                window.ALL_BRICKLINK_SOLID_COLORS.forEach(function (c) {
+                    stock[String(c.hex).toLowerCase()] = true;
+                });
+            }
+            [].forEach.call(tiles, function (tile) {
+                if (tile.querySelector(".bk-cr-tilecount")) return;
+                var id = tile.dataset.style, n;
+                if (id === "original") {
+                    n = basePalette.length;
+                } else {
+                    var list = lists[id];
+                    if (!list) return;
+                    n = stock
+                        ? list.filter(function (h) { return stock[String(h).toLowerCase()]; }).length
+                        : list.length;
+                }
+                tile.appendChild(el("span", "bk-cr-tilecount", n + " Farben"));
+            });
+            tilesAnnotated = true;
         }
 
         /* --------------------------------------------------------- KI tab */

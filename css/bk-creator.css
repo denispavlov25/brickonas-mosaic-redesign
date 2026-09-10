@@ -729,3 +729,9 @@ body.bk-creator .bk-style-tile-label {
     font-size: .74rem; font-weight: 700; text-align: center; color: var(--c-ink-soft);
 }
 body.bk-creator .bk-style-tile.active .bk-style-tile-label { color: var(--c-accent-d); }
+/* A style is a palette, so its size is the tile's most useful fact. */
+body.bk-creator .bk-cr-tilecount {
+    display: block; text-align: center; font-size: .66rem; font-weight: 700;
+    color: var(--c-ink-soft); opacity: .85; margin-top: -1px;
+}
+body.bk-creator .bk-style-tile.active .bk-cr-tilecount { color: var(--c-accent-d); opacity: 1; }
