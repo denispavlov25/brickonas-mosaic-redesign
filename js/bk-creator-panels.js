@@ -278,24 +278,56 @@
             var cur = currentKey();
             sizeList.innerHTML = "";
             list.forEach(function (v) {
-                // Proportional preview: the tile mirrors the real aspect ratio.
-                var long = Math.max(v.w, v.h), pw = Math.round(38 * v.w / long), ph = Math.round(38 * v.h / long);
                 var card = el("button", "bk-cr-size-card");
                 card.type = "button";
                 card.setAttribute("aria-pressed", v.key === cur ? "true" : "false");
                 card.innerHTML =
-                    '<span class="bk-cr-prop"><i style="width:' + pw + 'px;height:' + ph + 'px"></i></span>' +
+                    plateIcon(v) +
                     '<span class="bk-cr-size-txt">' +
                         '<span class="bk-cr-size-top">' +
                             '<span class="bk-cr-size-cm">' + cm(v.w) + " &times; " + cm(v.h) + ' cm</span>' +
                             '<span class="bk-cr-size-price">' + v.price + " &euro;</span>" +
                         "</span>" +
-                        '<span class="bk-cr-size-sub">' + (v.w / v.plate) + " &times; " + (v.h / v.plate) +
-                        " Platten &middot; " + v.w + "&times;" + v.h + " Noppen</span></span>";
+                        // Studs first: that is the number which actually differs
+                        // between two cards of the same plate count, and it is what
+                        // decides how much detail the picture keeps. The plate count
+                        // stays a plain total, so the line carries only ONE "x" pair
+                        // -- "2 x 1 Platten - 64x32 Noppen" put two multiplications
+                        // side by side and read as one garbled number.
+                        '<span class="bk-cr-size-sub">' + v.w + " &times; " + v.h + " Noppen &middot; " +
+                        plateCount(v) + "</span></span>";
                 card.addEventListener("click", function () { pickSize(v); });
                 sizeList.appendChild(card);
             });
         }
+        function plateCount(v) {
+            var n = (v.w / v.plate) * (v.h / v.plate);
+            return n === 1 ? "1 Platte" : n + " Platten";
+        }
+
+        /**
+         * The icon IS the plate layout: a rectangle in the real proportions, cut
+         * into the real number of plates. The old one painted a fixed 3 px stud
+         * texture that matched no actual stud count and collapsed into a bare
+         * line at 6:1 (288x48) -- decoration that told the customer nothing.
+         * The short side keeps a floor so a panorama stays readable; the ratio is
+         * then slightly off, which is the right trade for an icon this size.
+         */
+        function plateIcon(v) {
+            var BOX_W = 48, BOX_H = 34, MIN = 9;
+            var ratio = v.w / v.h, pw, ph;
+            if (ratio >= BOX_W / BOX_H) {
+                pw = BOX_W; ph = Math.max(MIN, Math.round(BOX_W / ratio));
+            } else {
+                ph = BOX_H; pw = Math.max(MIN, Math.round(BOX_H * ratio));
+            }
+            var cols = v.w / v.plate, rows = v.h / v.plate;
+            var cells = new Array(cols * rows + 1).join("<i></i>");
+            return '<span class="bk-cr-prop"><span class="bk-cr-plate" style="width:' + pw +
+                   "px;height:" + ph + "px;grid-template-columns:repeat(" + cols +
+                   ",1fr);grid-template-rows:repeat(" + rows + ',1fr)">' + cells + "</span></span>";
+        }
+
         function pickSize(v) {
             ["width-step-select", "height-step-select"].forEach(function (id) {
                 var s = document.getElementById(id);

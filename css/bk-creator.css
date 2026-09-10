@@ -195,7 +195,7 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 /* Size cards read as plates: proportional preview, stacked facts, price last. */
 .bk-cr-sizes { display: grid; gap: 8px; }
 .bk-cr-size-card {
-    display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 12px;
+    display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 13px;
     text-align: left; background: var(--c-panel);
     border: 1.5px solid var(--c-line); border-radius: 11px;
     padding: 9px 11px; cursor: pointer; font: inherit;
@@ -203,18 +203,21 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 }
 .bk-cr-size-card:hover { border-color: var(--c-line-2); background: #FAFCFA; }
 .bk-cr-size-card[aria-pressed="true"] { border-color: var(--c-accent); background: #EAF4EA; }
-.bk-cr-prop { display: grid; place-items: center; height: 40px; }
-.bk-cr-prop i {
-    display: block; border-radius: 3px;
-    background: repeating-linear-gradient(90deg,#C7D8C8 0 3px,transparent 3px 6px),
-                repeating-linear-gradient(0deg,#C7D8C8 0 3px,transparent 3px 6px), #E4EDE4;
-    border: 1.5px solid #B7CCB8;
+/* The icon is the plate layout, drawn as a grid: the gap lets the container
+   colour show through as the seams between plates, so it stays crisp at any
+   size and matches the "n Platten" next to it. */
+.bk-cr-prop { display: grid; place-items: center; height: 38px; }
+.bk-cr-plate {
+    display: grid; gap: 1px; padding: 1px; border-radius: 3px;
+    background: #A9C3AB; overflow: hidden;
 }
-.bk-cr-size-card[aria-pressed="true"] .bk-cr-prop i { border-color: var(--c-accent); background: #CFE5D0; }
+.bk-cr-plate i { display: block; background: #E4EDE4; border-radius: .5px; }
+.bk-cr-size-card[aria-pressed="true"] .bk-cr-plate { background: var(--c-accent); }
+.bk-cr-size-card[aria-pressed="true"] .bk-cr-plate i { background: #CFE5D0; }
 .bk-cr-size-txt { display: block; min-width: 0; }
 .bk-cr-size-top { display: flex; align-items: baseline; gap: 10px; }
 .bk-cr-size-cm { font-weight: 800; font-size: .95rem; white-space: nowrap; }
-.bk-cr-size-sub { display: block; font-size: .74rem; line-height: 1.35; color: var(--c-ink-soft); margin-top: 2px; }
+.bk-cr-size-sub { display: block; font-size: .76rem; line-height: 1.35; color: var(--c-ink-soft); margin-top: 3px; }
 .bk-cr-size-price { margin-left: auto; font-weight: 800; color: var(--c-accent-d); font-size: .95rem; white-space: nowrap; }
 
 /* ------------------------------------------------------------- sliders */
