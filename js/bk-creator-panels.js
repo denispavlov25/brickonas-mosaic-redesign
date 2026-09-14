@@ -1057,8 +1057,15 @@
             ch.size.querySelector("b").innerHTML = cm(w) + " &times; " + cm(h) + " cm";
             ch.studs.querySelector("b").textContent = w + " × " + h;
             var v = (window.MOSAIC_VARIATIONS || {})[currentKey()];
-            ch.price.querySelector("b").innerHTML = v ? v.price + " &euro;" : "—";
             parkOrderCard();
+            // The header shows what the customer will actually pay, so it reads
+            // the order card's total, which the app computes (variation price
+            // plus the 29 EUR frame when that is ticked). Reading the variation
+            // price here left 69,00 EUR in the header next to 98,00 EUR on the
+            // card once a frame was chosen.
+            var cardPrice = document.getElementById("mosaic-product-price");
+            var total = cardPrice ? cardPrice.textContent.trim() : "";
+            ch.price.querySelector("b").innerHTML = total || (v ? v.price + " &euro;" : "—");
 
             // A 16er admin size has no variation to buy. Block the button, but
             // only ever undo a block WE set -- index.js disables the same button
@@ -1077,6 +1084,11 @@
                 }
             }
         }
+        // Ticking the frame changes the total but no slider -- follow it too.
+        // After the app's own handler, which is what writes the card total.
+        var frameBox = document.getElementById("mosaic-frame-checkbox");
+        if (frameBox) frameBox.addEventListener("change", function () { setTimeout(updateHead, 0); });
+
         ["width-slider", "height-slider", "width-step-select", "height-step-select"].forEach(function (id) {
             var n = document.getElementById(id);
             if (!n) return;
