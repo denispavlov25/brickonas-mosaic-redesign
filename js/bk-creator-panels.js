@@ -29,6 +29,10 @@
 
         /* ------------------------------------------------------ stage bar */
         bar.innerHTML =
+            // First in the bar so it is visible without scrolling on a phone.
+            '<button type="button" id="bk-cr-newimage" class="bk-cr-newimage">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 16l5-5 4 4 3-3 4 4"/></svg>' +
+              '<span>Neues Bild</span></button>' +
             '<span>Zoom</span>' +
             '<input type="range" id="bk-cr-zoom-range" min="40" max="300" step="5" value="100">' +
             '<span id="bk-cr-zoom-val">100 %</span>' +
@@ -46,6 +50,23 @@
             });
         }
         bar.addEventListener("input", applyZoom);
+
+        /**
+         * Back to the start screen for a different picture. Owner: there was no
+         * way to choose another image -- the only route ("Anderes Bild") sat in
+         * the Zuschnitt tab and opened a bare file dialog, without the example
+         * pictures, and did not recompute the mosaic afterwards either.
+         *
+         * Reloading the document is deliberate: it lands on the real upload
+         * screen with upload AND examples and leaves no half-updated state
+         * behind. The query string survives, so ?ui=new and ?admin=... stay.
+         */
+        function chooseNewImage() {
+            var ok = window.confirm("Neues Bild wählen?\n\nDein aktuelles Mosaik und die Einstellungen " +
+                                    "(Größe, Stil, Farben) werden dabei verworfen.");
+            if (ok) window.location.reload();
+        }
+        bar.querySelector("#bk-cr-newimage").addEventListener("click", chooseNewImage);
         bar.querySelector("#bk-cr-zoom-reset").addEventListener("click", function () {
             document.getElementById("bk-cr-zoom-range").value = 100;
             applyZoom();
@@ -202,12 +223,29 @@
             return document.getElementById("create-mosaic-btn");
         }
         var recalcTimer = null, recalcPoll = null;
+
+        /**
+         * Run something that makes the app recompute, with the editor's own wait
+         * on the picture. The app's full-screen loader is suppressed inside the
+         * editor (it flashed white), so anything that recomputes WITHOUT going
+         * through here would show no indicator at all -- which is exactly what
+         * the new reset buttons would otherwise have done.
+         */
+        function runWithBusy(fn) {
+            busy.classList.add("on");
+            showBusy(true);
+            fn();
+            watchUntilIdle();
+        }
         function recalc() {
             var b = nextButton();
             if (!b) return;
             busy.classList.add("on");
             showBusy(true);
             b.click();
+            watchUntilIdle();
+        }
+        function watchUntilIdle() {
             // The pipeline is async and yields paint frames; watch for a result.
             //
             // Single-flight on purpose. Each call used to open its OWN 500 ms
@@ -485,6 +523,22 @@
             maybeAutoRecalc();
         }
 
+        /**
+         * The same row the KI panel already has: a group label on the left and
+         * "Zurücksetzen" on its right. Owner: Steine, Malen and Zuschnitt had no
+         * way to undo, only KI did.
+         */
+        function makeResetRow(panel, label, onReset, before) {
+            var row = el("div", "bk-cr-grow");
+            row.appendChild(el("p", "bk-cr-glabel", label));
+            var btn = el("button", "bk-cr-undo bk-cr-reset", '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Zurücksetzen</span>');
+            btn.type = "button";
+            btn.addEventListener("click", onReset);
+            row.appendChild(btn);
+            if (before) panel.insertBefore(row, before); else panel.appendChild(row);
+            return btn;
+        }
+
         /* -------------------------------------------------- ZUSCHNITT tab */
         C.heading(P.crop, "Zuschnitt", "Der Rahmen zeigt, was gebaut wird — alles außerhalb fällt weg.");
         P.crop.appendChild(el("p", "bk-cr-note",
@@ -501,7 +555,6 @@
                 var d = cr.getCanvasData();
                 cr.setCropBoxData({ left: d.left, top: d.top, width: d.width, height: d.height });
             }],
-            ["Mittig setzen", '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M3 3h2M19 3h2M3 21h2M19 21h2"/>', function (cr) { cr.reset(); }],
             ["90° drehen", '<path d="M4 12a8 8 0 1 1 3 6"/><path d="M4 12V7m0 5h5"/>', function (cr) { cr.rotate(90); }],
             ["Anderes Bild", '<path d="M4 16l5-5 4 4 3-3 4 4"/><rect x="3" y="4" width="18" height="16" rx="2"/>', null]
         ].forEach(function (t) {
@@ -509,9 +562,20 @@
             b.type = "button";
             b.addEventListener("click", function () {
                 if (t[2]) { var cr = cropper(); if (cr) { t[2](cr); } }
-                else { var pick = document.getElementById("image-input-new"); if (pick) { var real = pick.querySelector("button,input,label") || pick; real.click(); } }
+                else { chooseNewImage(); }
             });
             cropBtns.appendChild(b);
+        });
+        // "Mittig setzen" called cropper.reset() but did not apply it, so the
+        // mosaic kept the old crop: a reset that resets nothing you can see. The
+        // real one undoes frame AND rotation and applies it; it stays on this
+        // tab so the customer sees the frame come back.
+        makeResetRow(P.crop, "Rahmen", function () {
+            var cv = document.getElementById("step-1-canvas-upscaled");
+            if (!cv || !cv.cropper) return;
+            cv.cropper.reset();
+            try { savedCrop = cv.cropper.getData(true); } catch (e) { /* keep going */ }
+            runWithBusy(function () { var nb = nextButton(); if (nb) nb.click(); });
         });
         P.crop.appendChild(cropBtns);
 
@@ -532,7 +596,13 @@
         var paletteNote = el("p", "bk-cr-note");
         paletteNote.hidden = true;
         var paletteBox = el("div"), paletteCount = el("p", "bk-cr-swcount", "");
-        P.color.append(paletteNote, paletteBox, paletteCount);
+        // The instruction used to live in the small grey count line under the
+        // grid ("... · Klick entfernt eine Farbe"), which is where nobody reads
+        // before clicking. It is now a sentence of its own ABOVE the grid.
+        var paletteHow = el("p", "bk-cr-instr",
+            "<b>Tippe auf eine Farbe, um sie zu entfernen.</b> " +
+            "Das Mosaik wird dann ohne diese Farbe neu berechnet.");
+        P.color.append(paletteNote, paletteHow, paletteBox, paletteCount);
         var presetBtn = document.getElementById("select-starting-custom-stud-map-button");
         if (presetBtn) {
             var wrap = el("div"); wrap.style.marginBottom = "14px";
@@ -541,6 +611,33 @@
             if (opts) wrap.appendChild(opts);
             P.color.insertBefore(wrap, paletteBox);
         }
+        /**
+         * The baseline "Zurücksetzen" goes back to. It is whatever the palette
+         * was before the customer started removing colours -- and it moves
+         * whenever something OTHER than a removal replaces the palette (a style,
+         * the preset list), because resetting past a chosen style would be a
+         * surprise. Removals made here are flagged, so they never move it.
+         */
+        var paletteBaseline = null, removingHere = false;
+        function snapshotPalette() {
+            var sorted = [], map = {};
+            paletteRows().forEach(function (row) {
+                var chip = row.querySelector("button div[style*='background']");
+                var h = chip && rgbToHex(chip.style.backgroundColor);
+                if (!h) return;
+                var qty = row.querySelector(".piece-count-input");
+                sorted.push(h);
+                map[h] = qty ? (parseFloat(qty.value) || 99999) : 99999;
+            });
+            return { sortedStuds: sorted, studMap: map };
+        }
+        function paletteChanged() {
+            if (!paletteBaseline) return false;
+            var now = snapshotPalette().sortedStuds;
+            return now.length !== paletteBaseline.sortedStuds.length ||
+                   now.some(function (h, i) { return h !== paletteBaseline.sortedStuds[i]; });
+        }
+
         function paletteRows() {
             var body = document.getElementById("custom-stud-table-body");
             return body ? [].slice.call(body.children) : [];
@@ -583,7 +680,7 @@
                 b.addEventListener("click", function () {
                     var x = row.querySelector('button[type="submit"], button.btn-danger, td:last-child button');
                     // The observer below re-renders as soon as the row is gone.
-                    if (x) { x.click(); maybeAutoRecalc(); }
+                    if (x) { removingHere = true; x.click(); maybeAutoRecalc(); }
                 });
                 grid.appendChild(b);
                 var h = rgbToHex(chip.style.backgroundColor);
@@ -593,7 +690,8 @@
 
             if (basePalette === null && rows.length) basePalette = hexes.slice();
 
-            paletteCount.textContent = rows.length + " Steinfarben aktiv · Klick entfernt eine Farbe";
+            paletteCount.textContent = rows.length + " Steinfarben aktiv";
+            if (paletteReset) paletteReset.disabled = !paletteChanged();
 
             // Say WHY the number changed. Without this the count looked as if it
             // moved on its own the moment a style was picked. Deliberately
@@ -612,6 +710,12 @@
                     + (basePalette ? basePalette.length : rows.length) + " zurück.";
             }
         }
+        paletteBaseline = snapshotPalette();
+        var paletteReset = makeResetRow(P.color, "Steinfarben", function () {
+            if (!paletteBaseline || typeof window.populateCustomStudSelectors !== "function") return;
+            var base = paletteBaseline;
+            runWithBusy(function () { window.populateCustomStudSelectors(base, true); });
+        }, paletteHow);
         renderPalette();
 
         /**
@@ -623,8 +727,13 @@
          */
         var studBody = document.getElementById("custom-stud-table-body");
         if (studBody && window.MutationObserver) {
-            new MutationObserver(function () { renderPalette(); })
-                .observe(studBody, { childList: true });
+            new MutationObserver(function () {
+                // A replacement from elsewhere (style, preset list) is the new
+                // starting point; one of our own removals is not.
+                if (!removingHere) paletteBaseline = snapshotPalette();
+                removingHere = false;
+                renderPalette();
+            }).observe(studBody, { childList: true });
         }
 
         /* --------------------------------------------------- ANPASSEN tab */
@@ -828,6 +937,12 @@
             });
             tools.appendChild(b);
         });
+        var clearPaint = document.getElementById("clear-overrides-button");
+        if (clearPaint) {
+            makeResetRow(P.paint, "Werkzeug", function () {
+                runWithBusy(function () { clearPaint.click(); });
+            }, null);
+        }
         if (tools.children.length) P.paint.appendChild(tools);
         move(document.getElementById("paintbrush-controls"), P.paint);
         P.paint.appendChild(el("p", "bk-cr-hint",

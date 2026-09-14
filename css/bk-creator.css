@@ -900,3 +900,45 @@ html.bk-embedded #image-input-card { position: relative; }
 @media (max-width: 940px) {
     .bk-cr-cardclose { width: 44px; height: 44px; top: 10px; right: 10px; }
 }
+
+
+/* ------------------------------------------------ cover while the editor mounts */
+html.bk-cr-booting::before,
+html.bk-cr-booting::after { position: fixed; z-index: 2147483000; }
+html.bk-cr-booting::before {
+    content: ""; inset: 0; background: #F2F6F1;
+}
+html.bk-cr-booting::after {
+    content: ""; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+    border-radius: 50%; border: 3px solid #CBE3CC; border-top-color: #2E7D32;
+    animation: bkspin .8s linear infinite;
+}
+
+/* ------------------------------------------------ "Neues Bild" in the stage bar */
+.bk-cr-stagebar .bk-cr-newimage {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--c-accent-d); border-color: #CBE3CC; background: #EAF4EA; font-weight: 800;
+}
+.bk-cr-stagebar .bk-cr-newimage svg { width: 15px; height: 15px; }
+.bk-cr-stagebar .bk-cr-newimage:hover { background: #DCEBDC; color: var(--c-accent-d); }
+
+/* ------------------------------------------------ reset buttons */
+.bk-cr-reset svg { width: 14px; height: 14px; }
+.bk-cr-reset:disabled { opacity: .45; cursor: default; }
+.bk-cr-reset:disabled:hover { background: none; border-color: var(--c-line); color: var(--c-ink-soft); }
+
+/* ------------------------------------------------ Steine: say what a click does */
+.bk-cr-instr {
+    margin: 0 0 12px; font-size: .9rem; line-height: 1.45; color: var(--c-ink);
+}
+.bk-cr-instr b { font-weight: 800; }
+/* on a mouse, show the consequence before the click */
+@media (hover: hover) {
+    .bk-cr-sw:hover::before, .bk-cr-sw:focus-visible::before {
+        content: "\00d7"; position: absolute; inset: 0; z-index: 1;
+        display: grid; place-items: center;
+        background: rgba(20, 30, 20, .45); border-radius: inherit;
+        color: #fff; font-size: 1.3rem; font-weight: 700; line-height: 1;
+    }
+}
+.bk-cr-swcount { font-size: .8rem; }

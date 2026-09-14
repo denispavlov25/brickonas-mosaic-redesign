@@ -192,6 +192,7 @@
         root.append(head, main);
         document.body.appendChild(root);
         document.body.classList.add("bk-creator");
+        if (window.__bkCrCover) window.__bkCrCover(false);
         restorePanelWidth();
 
         if (document.documentElement.classList.contains("bk-embedded")) {
@@ -302,6 +303,34 @@
         toggleFull(false);
         if (sheetBtn) sheetBtn.setAttribute("aria-expanded", "false");
     }
+
+    /* ------------------------------------------------ no flash of the old UI
+       Picking a picture makes the app show its classic step-1 screen at once
+       (sliders, controls) and the editor mounts only when the first result is
+       in -- so for about a second the customer saw the old configurator.
+       From the moment the upload card is hidden until the editor exists, an
+       opaque cover sits on top. It is an overlay on purpose, NOT display:none on
+       the classic layer: Cropper.js measures that layout while it initialises. */
+    (function bootCover() {
+        if (!/[?&]ui=new\b/.test(window.location.search)) return;
+        var docEl = document.documentElement, safety = null;
+        function cover(on) {
+            docEl.classList.toggle("bk-cr-booting", on);
+            clearTimeout(safety);
+            // Never trap anyone behind it if the editor fails to mount.
+            if (on) safety = setTimeout(function () { docEl.classList.remove("bk-cr-booting"); }, 20000);
+        }
+        window.__bkCrCover = cover;
+        function watch() {
+            var card = document.getElementById("image-input-card");
+            if (!card || !window.MutationObserver) return;
+            new MutationObserver(function () {
+                if (card.hidden && !document.body.classList.contains("bk-creator")) cover(true);
+            }).observe(card, { attributes: true, attributeFilter: ["hidden"] });
+        }
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watch);
+        else watch();
+    })();
 
     /* ------------------------------------------------ way out, from second one
        The editor shell is only built once a picture exists, so on the upload
