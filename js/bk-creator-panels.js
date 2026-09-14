@@ -19,6 +19,22 @@
 
     var RECALC_DEBOUNCE_MS = 500;  // one compute after the customer stops fiddling
 
+    /* A size card on the shop page ("Jetzt gestalten" on 76,8 x 76,8 cm) should
+       land on that size. It arrives in the URL on the first open and as a
+       message after that; it can only be applied once the editor exists,
+       which is after the customer has chosen a picture. */
+    var pendingSize = (function () {
+        var q = new URLSearchParams(window.location.search);
+        return q.get("bk_size") ? { size: q.get("bk_size"), plate: q.get("bk_plate") || "" } : null;
+    })();
+    var applyPendingSize = null;   // set by boot()
+    window.addEventListener("message", function (e) {
+        var d = e.data;
+        if (!d || d.bk !== "mosaic-size" || !d.size) return;
+        pendingSize = { size: d.size, plate: d.plate || "" };
+        if (applyPendingSize) applyPendingSize();
+    });
+
     function boot() {
         var C = window.BkCreator;
         if (!C) return;
@@ -1077,6 +1093,26 @@
         [].forEach.call(document.querySelectorAll(".mosaic-controls-panel"), function (n) { attic.appendChild(n); });
 
         renderSizes(); buildAdminPlate16(); updateHead(); C.select("size");
+
+        applyPendingSize = function () {
+            if (!pendingSize) return;
+            var m = /^(\d+)x(\d+)$/.exec(pendingSize.size);
+            if (!m) { pendingSize = null; return; }
+            var w = +m[1], h = +m[2], plate = parseInt(pendingSize.plate, 10);
+            var v = variations().filter(function (x) {
+                return x.w === w && x.h === h && (!plate || x.plate === plate);
+            })[0];
+            pendingSize = null;
+            if (!v) return;
+            // show the tab the card lives in, so the selection is visible
+            activeShape = w === h ? "square" : (w > h ? "land" : "port");
+            [].forEach.call(shapeRow.children, function (c, i) {
+                c.setAttribute("aria-pressed", SHAPES[i].id === activeShape ? "true" : "false");
+            });
+            renderSizes();
+            if (currentKey() !== v.key) pickSize(v);
+        };
+        applyPendingSize();
 
         // On a phone the editor opens with the Größe sheet up. Closed, the six
         // icons at the bottom do not read as "tap me" -- the customer arrives
