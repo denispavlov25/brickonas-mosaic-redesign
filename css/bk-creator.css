@@ -1002,3 +1002,37 @@ html.bk-cr-booting::after {
     .bk-cr-stagebar .bk-cr-newimage { padding: 8px 10px; gap: 5px; }
     .bk-cr-stagebar .bk-cr-zval { min-width: 50px; }
 }
+
+
+/* ============================================================ go to cart =====
+   One button or the other, decided purely by the app's own `bk-added` class on
+   its order button -- so changing the design afterwards (which resets that
+   class) brings "Bestellen" back without any state of our own. */
+.bk-cr-gocart { display: none; }
+body.bk-creator #order-mosaic-button.bk-added { display: none !important; }
+body.bk-creator #order-mosaic-button.bk-added + .bk-cr-gocart {
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    min-height: 48px; padding: 12px 22px; margin-left: auto;
+    background: var(--c-accent); color: #fff; border: 0; border-radius: 10px;
+    font-family: var(--bk-font-body, "Nunito", sans-serif);
+    font-size: 1rem; font-weight: 800; cursor: pointer;
+    box-shadow: 0 6px 16px rgba(46, 125, 50, .25);
+    transition: background .18s ease;
+}
+body.bk-creator #order-mosaic-button.bk-added + .bk-cr-gocart:hover { background: var(--c-accent-d); }
+.bk-cr-gocart svg { width: 19px; height: 19px; }
+
+/* the header's primary action, once it means "go to cart" */
+.bk-cr-finish.is-cart { gap: 8px; }
+.bk-cr-finish svg { width: 18px; height: 18px; }
+
+@media (max-width: 940px) {
+    /* same footprint as the "Bestellen" button it replaces */
+    body.bk-creator .bk-cr-foot #order-mosaic-button.bk-added + .bk-cr-gocart {
+        width: 100%; align-self: stretch; margin-left: 0; min-height: 52px;
+    }
+}
+/* narrow phones: the header has room for "Warenkorb", not for "Zum ... ->" */
+@media (max-width: 620px) {
+    .bk-cr-finish .bk-cr-fin-long { display: none; }
+}

@@ -318,10 +318,72 @@
             if (!card || !foot) return false;
             if (card.parentElement !== foot) foot.appendChild(card);
             refreshOrderCard();
+            mountCartButton();
             return true;
         }
 
+        /* ------------------------------------------------ "Zum Warenkorb" ----
+         * After a successful add the order button used to turn grey ("Im
+         * Warenkorb") and that was the end of the road: the customer had to find
+         * their own way out of the editor to the cart. The next step is now a
+         * button.
+         *
+         * The address comes from WooCommerce itself -- the shop page exposes
+         * wc_add_to_cart_params.cart_url, and this frame is same-origin -- so no
+         * host or slug is written into the configurator. It navigates the TOP
+         * window: the cart must not open inside the editor's frame. */
+        var CART_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>';
+        function cartUrl() {
+            try {
+                var p = window.parent;
+                if (p && p.wc_add_to_cart_params && p.wc_add_to_cart_params.cart_url) return p.wc_add_to_cart_params.cart_url;
+            } catch (e) { /* not same-origin */ }
+            try {
+                if (window.wc_add_to_cart_params && window.wc_add_to_cart_params.cart_url) return window.wc_add_to_cart_params.cart_url;
+            } catch (e) { /* ignore */ }
+            return "/warenkorb/";
+        }
+        function goToCart() {
+            var url = cartUrl();
+            try { window.top.location.href = url; } catch (e) { window.location.href = url; }
+        }
+        function isAdded() {
+            var ob = document.getElementById("order-mosaic-button");
+            return !!(ob && ob.classList.contains("bk-added"));
+        }
+
+        /**
+         * The button sits right after the app's own order button, and CSS shows
+         * one or the other off the app's `bk-added` class. No state is copied:
+         * when the customer changes the design afterwards, the app resets its
+         * button and this one disappears with it.
+         */
+        function mountCartButton() {
+            var ob = document.getElementById("order-mosaic-button");
+            if (!ob || ob.parentElement.querySelector(".bk-cr-gocart")) return;
+            var go = el("button", "bk-cr-gocart", CART_ICON + "<span>Zum Warenkorb</span><span aria-hidden=\"true\">&rarr;</span>");
+            go.type = "button";
+            go.addEventListener("click", goToCart);
+            ob.insertAdjacentElement("afterend", go);
+
+            // The header's primary action follows along: "Fertig" opens the order
+            // card, which is pointless once the mosaic is already in the cart.
+            var fin = document.querySelector(".bk-cr-finish");
+            function syncFinish() {
+                if (!fin) return;
+                var added = isAdded();
+                fin.classList.toggle("is-cart", added);
+                fin.innerHTML = added
+                    ? CART_ICON + '<span class="bk-cr-fin-long">Zum&nbsp;</span>Warenkorb<span class="bk-cr-fin-long">&nbsp;&rarr;</span>'
+                    : "Fertig &rarr;";
+                fin.setAttribute("aria-label", added ? "Zum Warenkorb" : "Fertig");
+            }
+            new MutationObserver(syncFinish).observe(ob, { attributes: true, attributeFilter: ["class"] });
+            syncFinish();
+        }
+
         window.bkCrFinish = function () {
+            if (isAdded()) { goToCart(); return; }
             if (!parkOrderCard()) { recalc(); return; }
             // On a phone the order card is a sheet of its own -- keeping it
             // permanently below the controls ate 221 px of a 614 px sheet.
