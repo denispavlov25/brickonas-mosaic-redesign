@@ -33,13 +33,24 @@
             '<button type="button" id="bk-cr-newimage" class="bk-cr-newimage">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 16l5-5 4 4 3-3 4 4"/></svg>' +
               '<span>Neues Bild</span></button>' +
-            '<span>Zoom</span>' +
-            '<input type="range" id="bk-cr-zoom-range" min="40" max="300" step="5" value="100">' +
-            '<span id="bk-cr-zoom-val">100 %</span>' +
-            '<button type="button" id="bk-cr-zoom-reset">Zurücksetzen</button>' +
+            /* One zoom group that serves both widths. A mouse gets the slider
+               and a labelled reset; a phone gets - 100 % + instead, where the
+               percentage itself is the reset. The slider plus two text buttons
+               needed ~640 px and scrolled "Zurücksetzen" and "Neu berechnen"
+               out of sight on every phone. */
+            '<span class="bk-cr-zgroup">' +
+              '<span class="bk-cr-zlabel">Zoom</span>' +
+              '<button type="button" id="bk-cr-zoom-out" class="bk-cr-zbtn" aria-label="Verkleinern">&minus;</button>' +
+              '<input type="range" id="bk-cr-zoom-range" min="40" max="300" step="5" value="100" aria-label="Zoom">' +
+              '<button type="button" id="bk-cr-zoom-val" class="bk-cr-zval" title="Auf 100 % zurücksetzen">100 %</button>' +
+              '<button type="button" id="bk-cr-zoom-in" class="bk-cr-zbtn" aria-label="Vergrößern">+</button>' +
+              '<button type="button" id="bk-cr-zoom-reset">Zurücksetzen</button>' +
+            '</span>' +
             '<span class="bk-cr-spacer"></span>' +
             '<span class="bk-cr-busy" id="bk-cr-busy">Mosaik wird berechnet</span>' +
-            '<button type="button" id="bk-cr-recalc">Neu berechnen</button>';
+            '<button type="button" id="bk-cr-recalc" title="Neu berechnen" aria-label="Neu berechnen">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>' +
+              '<span>Neu berechnen</span></button>';
 
         function applyZoom() {
             var v = +document.getElementById("bk-cr-zoom-range").value;
@@ -67,6 +78,17 @@
             if (ok) window.location.reload();
         }
         bar.querySelector("#bk-cr-newimage").addEventListener("click", chooseNewImage);
+        function stepZoom(delta) {
+            var r = document.getElementById("bk-cr-zoom-range");
+            r.value = String(Math.max(+r.min, Math.min(+r.max, +r.value + delta)));
+            applyZoom();
+        }
+        bar.querySelector("#bk-cr-zoom-out").addEventListener("click", function () { stepZoom(-20); });
+        bar.querySelector("#bk-cr-zoom-in").addEventListener("click", function () { stepZoom(20); });
+        bar.querySelector("#bk-cr-zoom-val").addEventListener("click", function () {
+            document.getElementById("bk-cr-zoom-range").value = 100;
+            applyZoom();
+        });
         bar.querySelector("#bk-cr-zoom-reset").addEventListener("click", function () {
             document.getElementById("bk-cr-zoom-range").value = 100;
             applyZoom();

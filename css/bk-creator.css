@@ -942,3 +942,63 @@ html.bk-cr-booting::after {
     }
 }
 .bk-cr-swcount { font-size: .8rem; }
+
+
+/* ============================================================ stage bar =====
+   Desktop: Neues Bild | Zoom [slider] 100 % [Zurücksetzen] ...... [Neu berechnen]
+   Phone:   Neues Bild ............ [- 100 % +] [refresh]  -- nothing scrolls away */
+.bk-cr-zgroup { display: inline-flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.bk-cr-stagebar .bk-cr-zbtn { display: none; }
+/* on a mouse the percentage reads as a value, but still resets on click */
+.bk-cr-stagebar .bk-cr-zval {
+    background: none; border: 0; padding: 0 2px; min-height: 0;
+    min-width: 3.4em; text-align: right; font: inherit; font-weight: 700;
+    color: var(--c-ink-soft); cursor: pointer;
+}
+.bk-cr-stagebar .bk-cr-zval:hover { color: var(--c-ink); }
+.bk-cr-stagebar #bk-cr-recalc { display: inline-flex; align-items: center; gap: 6px; }
+.bk-cr-stagebar #bk-cr-recalc svg { width: 15px; height: 15px; }
+
+@media (max-width: 680px) {
+    .bk-cr-stagebar {
+        overflow-x: visible; justify-content: space-between;
+        gap: 8px; padding: 8px 10px;
+    }
+    .bk-cr-stagebar .bk-cr-zlabel,
+    .bk-cr-stagebar input[type="range"],
+    .bk-cr-stagebar #bk-cr-zoom-reset,
+    .bk-cr-stagebar .bk-cr-spacer { display: none; }
+
+    /* - 100 % + as one joined control */
+    .bk-cr-zgroup {
+        gap: 0; border: 1px solid var(--c-line); border-radius: 10px;
+        background: var(--c-panel); overflow: hidden; margin-left: auto;
+    }
+    .bk-cr-stagebar .bk-cr-zbtn {
+        display: grid; place-items: center;
+        width: 44px; height: 44px; min-height: 44px; padding: 0;
+        border: 0; border-radius: 0; background: none;
+        font-size: 1.25rem; font-weight: 700; color: var(--c-ink);
+    }
+    .bk-cr-stagebar .bk-cr-zval {
+        min-width: 58px; min-height: 44px; padding: 0 4px; text-align: center;
+        border-left: 1px solid var(--c-line); border-right: 1px solid var(--c-line);
+        font-size: .88rem; color: var(--c-ink);
+    }
+
+    /* recompute is automatic, so this is a safety action: icon only */
+    .bk-cr-stagebar #bk-cr-recalc {
+        width: 44px; height: 44px; min-height: 44px; padding: 0;
+        justify-content: center; flex: 0 0 44px;
+    }
+    .bk-cr-stagebar #bk-cr-recalc span { display: none; }
+    .bk-cr-stagebar #bk-cr-recalc svg { width: 19px; height: 19px; }
+
+    .bk-cr-stagebar .bk-cr-newimage { padding: 8px 12px; }
+}
+/* the smallest phones: the label shortens rather than anything scrolling */
+@media (max-width: 360px) {
+    .bk-cr-stagebar { gap: 6px; padding: 8px; }
+    .bk-cr-stagebar .bk-cr-newimage { padding: 8px 10px; gap: 5px; }
+    .bk-cr-stagebar .bk-cr-zval { min-width: 50px; }
+}
