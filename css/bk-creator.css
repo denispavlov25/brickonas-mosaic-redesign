@@ -203,6 +203,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
 .bk-cr-shape[aria-pressed="true"] { border-color: var(--c-accent); color: var(--c-accent-d); background: #EAF4EA; }
 
 /* Size cards read as plates: proportional preview, stacked facts, price last. */
+/* iOS Safari paints the text of a <button> without its own colour system blue (desktop
+   Chrome: black) -- the size list's "25,6 × 25,6 cm" came out blue on iPhones. */
+.bk-cr-size-card, .bk-style-tile, .mosaic-example-card { color: var(--c-ink, #2A352B); }
 .bk-cr-sizes { display: grid; gap: 8px; }
 .bk-cr-size-card {
     display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 13px;
@@ -590,7 +593,12 @@ body.bk-creator.bk-cr-paint .bk-cr-view canvas[id$="-upscaled"] { pointer-events
    visibly flickered. Fixed width, digits of equal width, room for two lines. */
 .bk-cr-stale--pdf .bk-cr-stale-card { width: min(330px, 100%); box-sizing: border-box; }
 .bk-cr-stale--pdf #bk-cr-pdf-sub { font-variant-numeric: tabular-nums; min-height: 3em; }
-body.bk-creator #mosaic-order-status.bk-sending { font-variant-numeric: tabular-nums; min-height: 3.2em; }
+/* two fixed lines (see index.js). Bootstrap makes this border-box, so the minimum
+   includes padding (11 + 14) and border (2): 2 lines x 1.45 = 2.9em. */
+body.bk-creator #mosaic-order-status.bk-sending {
+    font-variant-numeric: tabular-nums; white-space: pre-line;
+    min-height: calc(2.9em + 27px);
+}
 .bk-cr-stale-card b { display: block; font-family: var(--bk-font-heading,'Fredoka',sans-serif);
     font-size: 1.04rem; font-weight: 600; margin-bottom: 5px; }
 .bk-cr-stale-card p { margin: 0; font-size: .8rem; line-height: 1.5; color: var(--c-ink-soft); }

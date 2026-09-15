@@ -2905,8 +2905,11 @@ document.addEventListener("bk-pdf-progress", function (e) {
     el.className = "mosaic-order-status bk-sending";
     // textContent, not innerHTML: this fires once per PDF page (~1330 times on a
     // 288x288 order) and there is no markup in the string to parse.
+    // Always two lines (percentage, then the step), so the box keeps its height:
+    // a label that wrapped on some steps and not on others made the order sheet
+    // jump up and down on phones. The CSS shows the \n as a line break.
     el.textContent = "\u23F3 Anleitung wird erstellt \u2014 " + d.pct + " %"
-        + (d.label ? " (" + d.label + ")" : "");
+        + "\n" + (d.label || "\u00A0");
 });
 
 async function generateInstructionsAsBlob() {
