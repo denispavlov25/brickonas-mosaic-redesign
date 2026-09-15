@@ -585,6 +585,12 @@ body.bk-creator.bk-cr-paint .bk-cr-view canvas[id$="-upscaled"] { pointer-events
     border-radius: 14px; padding: 20px 22px;
     box-shadow: 0 12px 34px rgba(26,42,27,.18);
 }
+/* The PDF card's text changes ~1300 times per order ("Platte 11 von 36 · Detail 8/9 · 31 %").
+   Sized by its content, the card got a few px wider or narrower on every update and
+   visibly flickered. Fixed width, digits of equal width, room for two lines. */
+.bk-cr-stale--pdf .bk-cr-stale-card { width: min(330px, 100%); box-sizing: border-box; }
+.bk-cr-stale--pdf #bk-cr-pdf-sub { font-variant-numeric: tabular-nums; min-height: 3em; }
+body.bk-creator #mosaic-order-status.bk-sending { font-variant-numeric: tabular-nums; min-height: 3.2em; }
 .bk-cr-stale-card b { display: block; font-family: var(--bk-font-heading,'Fredoka',sans-serif);
     font-size: 1.04rem; font-weight: 600; margin-bottom: 5px; }
 .bk-cr-stale-card p { margin: 0; font-size: .8rem; line-height: 1.5; color: var(--c-ink-soft); }
