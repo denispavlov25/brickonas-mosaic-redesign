@@ -121,7 +121,11 @@
         sheetBtn = el("button", "bk-cr-grab", '<i></i><b class="bk-cr-grabtitle"></b><span>Schließen</span>');
         sheetBtn.type = "button";
         sheetBtn.setAttribute("aria-expanded", "false");
-        sheetBtn.addEventListener("click", function () { closeSheets(); });
+        sheetBtn.addEventListener("click", function () {
+            // A drag on the bar already did its job; the click that follows it must not close.
+            if (sheetBtn.dataset.bkDragged) { delete sheetBtn.dataset.bkDragged; return; }
+            closeSheets();
+        });
         // Sits INSIDE the grab bar but is its own button, so the bar can keep
         // being the close action while this one only changes the height.
         fullBtn = el("button", "bk-cr-grow2", "&#9650;");
@@ -138,6 +142,7 @@
         // "Bestellen" stay in view while the size list above is scrolled.
         foot = el("div", "bk-cr-foot");
         side.append(sheetBtn, body, foot);
+        attachSheetDrag(sheetBtn, side);
 
         TABS.forEach(function (t, i) {
             var b = el("button", "bk-cr-tab", svg(t.icon) + "<span>" + t.label + "</span>");
@@ -296,6 +301,45 @@
             fullBtn.title = on ? "Bild wieder zeigen" : "Auf volle Höhe";
             fullBtn.setAttribute("aria-label", fullBtn.title);
         }
+    }
+
+    /* The grey line on the sheet looks like a drag handle, so it has to behave
+       like one (customers tried to pull it): drag down closes the sheet -- or,
+       from full height, goes back to the normal height -- and drag up opens it to
+       full height. A plain tap still closes, as before. */
+    function attachSheetDrag(handle, sheet) {
+        var startY = null, dy = 0, dragged = false;
+        handle.addEventListener("pointerdown", function (e) {
+            if (e.target.closest(".bk-cr-grow2")) return;
+            startY = e.clientY; dy = 0; dragged = false;
+            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* old browser */ }
+        });
+        handle.addEventListener("pointermove", function (e) {
+            if (startY === null) return;
+            dy = e.clientY - startY;
+            if (Math.abs(dy) > 6) dragged = true;
+            if (!dragged) return;
+            sheet.style.transition = "none";
+            // Follows the finger downwards; upwards it only gives a little, as a hint.
+            sheet.style.transform = "translateY(" + (dy > 0 ? dy : Math.max(dy, -40) / 2) + "px)";
+        });
+        function end(cancelled) {
+            if (startY === null) return;
+            startY = null;
+            sheet.style.transition = "";
+            sheet.style.transform = "";
+            if (!dragged || cancelled) return;
+            handle.dataset.bkDragged = "1";
+            setTimeout(function () { delete handle.dataset.bkDragged; }, 400);
+            if (dy > 60) {
+                if (document.body.classList.contains("bk-cr-full")) toggleFull(false);
+                else closeSheets();
+            } else if (dy < -60) {
+                toggleFull(true);
+            }
+        }
+        handle.addEventListener("pointerup", function () { end(false); });
+        handle.addEventListener("pointercancel", function () { end(true); });
     }
 
     function closeSheets() {

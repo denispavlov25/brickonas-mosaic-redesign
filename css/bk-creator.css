@@ -419,6 +419,9 @@ body.bk-cr-dragging .bk-cr-view { pointer-events: none; }
         color: var(--c-accent-d);
     }
     body.bk-cr-sheet .bk-cr-grab, body.bk-cr-order .bk-cr-grab { display: flex; }
+    /* The bar is a real drag handle (bk-creator-ui.js attachSheetDrag): without
+       touch-action the browser would scroll the page instead of reporting the drag. */
+    .bk-cr-grab { touch-action: none; }
 
     /* Full height: the picture steps aside entirely and the tool gets the
        screen. The rail stays, so the customer can still switch tools and get
