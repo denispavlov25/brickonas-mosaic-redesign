@@ -1053,3 +1053,16 @@ body.bk-creator #order-mosaic-button.bk-added + .bk-cr-gocart:hover { background
 @media (max-width: 620px) {
     .bk-cr-finish .bk-cr-fin-long { display: none; }
 }
+
+/* ---- Steine-Liste mit Gewicht (order card) ---- */
+.mosaic-gram-list { margin: 10px 0 4px; border: 1px solid var(--c-line); border-radius: 10px; background: #fff; }
+.mosaic-gram-list > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; font-size: .9rem; color: var(--c-accent-d); list-style-position: inside; }
+.mosaic-gram-list[open] > summary { border-bottom: 1px solid var(--c-line); }
+#mosaic-gram-list-body { max-height: 260px; overflow-y: auto; padding: 4px 12px 10px; }
+.mosaic-gram-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.mosaic-gram-table th { text-align: left; font-weight: 600; color: var(--c-ink-soft); padding: 6px 4px; position: sticky; top: 0; background: #fff; }
+.mosaic-gram-table td { padding: 5px 4px; border-top: 1px solid var(--c-line); }
+.mosaic-gram-table td:nth-child(2), .mosaic-gram-table td:nth-child(3),
+.mosaic-gram-table th:nth-child(2), .mosaic-gram-table th:nth-child(3) { text-align: right; white-space: nowrap; }
+.mosaic-gram-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
+.mosaic-gram-total { margin: 8px 0 0; font-size: .82rem; color: var(--c-ink-soft); }

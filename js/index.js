@@ -4159,6 +4159,55 @@ if (backToRefineBtn) {
     });
 }
 
+/* Weight per colour, for the mosaic wall in the Coffee & Bricks shop: customers
+   weigh their bricks instead of counting hundreds of them. 100 studs = 11 g
+   (measured by Jonas, 10.11.2026); +5 % reserve, rounded up to whole grams, so a
+   customer rather takes a few too many than too few. */
+var BK_GRAMS_PER_STUD = 0.11;
+var BK_GRAM_RESERVE = 1.05;
+
+function bkGramList() {
+    if (typeof step4Canvas === 'undefined' || !step4Canvas) return null;
+    // Until the mosaic is computed the canvas still has its default 300x150 size;
+    // counting that would list thousands of "black" studs.
+    if (step4Canvas.width !== targetResolution[0] || step4Canvas.height !== targetResolution[1]) return null;
+    var usedMap = getUsedPixelsStudMap(getPixelArrayFromCanvas(step4Canvas));
+    var rows = Object.keys(usedMap).map(function (hex) {
+        var count = usedMap[hex];
+        return {
+            hex: hex,
+            name: translateColor(HEX_TO_COLOR_NAME[hex]) || HEX_TO_COLOR_NAME[hex] || hex,
+            count: count,
+            grams: Math.max(1, Math.ceil(count * BK_GRAMS_PER_STUD * BK_GRAM_RESERVE))
+        };
+    }).sort(function (a, b) { return b.count - a.count; });
+    var total = rows.reduce(function (sum, r) { return sum + r.grams; }, 0);
+    return { rows: rows, totalGrams: total };
+}
+window.bkGramList = bkGramList;
+
+/** Fills the "Steine-Liste mit Gewicht" box in the order card, only while it is open. */
+function bkRenderGramList() {
+    var box = document.getElementById('mosaic-gram-list');
+    var body = document.getElementById('mosaic-gram-list-body');
+    if (!box || !body || !box.open) return;
+    var list = bkGramList();
+    if (!list) { body.innerHTML = '<p class="mosaic-gram-total">Die Liste erscheint, sobald das Mosaik berechnet ist.</p>'; return; }
+    var html = '<table class="mosaic-gram-table"><thead><tr><th>Farbe</th><th>Steine</th><th>Gewicht</th></tr></thead><tbody>';
+    list.rows.forEach(function (r) {
+        html += '<tr><td><span class="mosaic-gram-dot" style="background:' + r.hex + '"></span>' + r.name + '</td>' +
+                '<td>' + r.count.toLocaleString('de-DE') + '</td><td>' + r.grams.toLocaleString('de-DE') + ' g</td></tr>';
+    });
+    html += '</tbody></table><p class="mosaic-gram-total">Zusammen ca. ' +
+            (list.totalGrams >= 1000 ? (list.totalGrams / 1000).toFixed(2).replace('.', ',') + ' kg' : list.totalGrams + ' g') +
+            ' &middot; mit 5 % Reserve</p>';
+    body.innerHTML = html;
+}
+(function () {
+    var box = document.getElementById('mosaic-gram-list');
+    if (box) box.addEventListener('toggle', bkRenderGramList);
+})();
+
 // Collect mosaic summary data (image + colors) for email notification
 function collectMosaicOrderData() {
     // Get the mosaic preview image from the upscaled canvas
@@ -4176,7 +4225,8 @@ function collectMosaicOrderData() {
         var name = translateColor(HEX_TO_COLOR_NAME[hex]);
         if (!name) { name = HEX_TO_COLOR_NAME[hex]; }
         if (!name) { name = hex; }
-        colors.push({ name: name, hex: hex, count: usedMap[hex] });
+        colors.push({ name: name, hex: hex, count: usedMap[hex],
+                      grams: Math.max(1, Math.ceil(usedMap[hex] * BK_GRAMS_PER_STUD * BK_GRAM_RESERVE)) });
     });
     var total = targetResolution[0] * targetResolution[1];
     var price = getMosaicPrice();
@@ -4589,6 +4639,7 @@ function getMosaicPrice() {
 
 // Update product card meta and button text when resolution changes
 function updateMosaicProductMeta() {
+    bkRenderGramList();
     var sizeEl = document.getElementById('mosaic-product-size');
     var piecesEl = document.getElementById('mosaic-product-pieces');
     if (sizeEl) {
