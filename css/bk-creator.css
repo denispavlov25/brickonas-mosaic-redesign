@@ -34,7 +34,7 @@ body.bk-creator {
    and every heavy compute raises it. Hiding it along with the old wizard meant
    that inside this editor an AI run (model download, background removal, a chat
    edit) showed nothing at all for several seconds. It stays. */
-body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic):not(#loading-overlay) { display: none !important; }
+body.bk-creator > *:not(.bk-cr-root):not(.bk-cr-attic):not(#loading-overlay):not(.bk-laden-ov) { display: none !important; }
 /* ...but ONLY for the AI runs, which have no substitute here. For mosaic work
    and the PDF this editor draws its own wait on the picture, and letting the
    full-screen one through as well produced a white flash on every size change:
@@ -1054,7 +1054,8 @@ body.bk-creator #order-mosaic-button.bk-added + .bk-cr-gocart:hover { background
     .bk-cr-finish .bk-cr-fin-long { display: none; }
 }
 
-/* ---- Steine-Liste mit Gewicht (order card) ---- */
+/* ---- Steine-Liste mit Gewicht (order card) — only in Laden-Modus (shop tablet, js/bk-laden.js) ---- */
+html:not(.bk-laden) .mosaic-gram-list { display: none; }
 .mosaic-gram-list { margin: 10px 0 4px; border: 1px solid var(--c-line); border-radius: 10px; background: #fff; }
 .mosaic-gram-list > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; font-size: .9rem; color: var(--c-accent-d); list-style-position: inside; }
 .mosaic-gram-list[open] > summary { border-bottom: 1px solid var(--c-line); }
@@ -1066,3 +1067,34 @@ body.bk-creator #order-mosaic-button.bk-added + .bk-cr-gocart:hover { background
 .mosaic-gram-table th:nth-child(2), .mosaic-gram-table th:nth-child(3) { text-align: right; white-space: nowrap; }
 .mosaic-gram-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
 .mosaic-gram-total { margin: 8px 0 0; font-size: .82rem; color: var(--c-ink-soft); }
+
+/* ---- Laden-Modus (shop tablet): no frame add-on, form and done screen ---- */
+html.bk-laden .mosaic-frame-addon { display: none !important; }
+.bk-laden-ov { position: fixed; inset: 0; z-index: 100000; background: rgba(20,40,24,.55); display: flex;
+               align-items: center; justify-content: center; padding: 16px; }
+.bk-laden-card { background: #fff; border-radius: 20px; padding: 26px 24px; width: min(520px, 100%); max-height: 92vh; overflow-y: auto;
+                 box-shadow: 0 20px 50px rgba(0,0,0,.25); font-size: 1.05rem; line-height: 1.5; color: var(--c-ink); }
+.bk-laden-wide { width: min(760px, 100%); text-align: center; }
+.bk-laden-card h2 { margin: 0 0 8px; font-family: var(--bk-font-heading, 'Fredoka', sans-serif); font-size: 1.6rem; }
+.bk-laden-card label { display: block; margin: 14px 0 0; font-weight: 700; font-size: .95rem; text-align: left; }
+.bk-laden-card input { display: block; width: 100%; margin-top: 6px; padding: 14px; font-size: 1.15rem; border: 1.5px solid var(--c-line-2);
+                       border-radius: 12px; box-sizing: border-box; }
+.bk-laden-card input:focus { outline: none; border-color: var(--c-accent); }
+.bk-laden-small { font-size: .85rem; color: var(--c-ink-soft); margin: 10px 0 0; }
+.bk-laden-err { color: #B3121F; font-weight: 700; margin: 12px 0 0; }
+.bk-laden-actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+.bk-laden-cancel, .bk-laden-go { flex: 1 1 160px; padding: 15px 18px; border-radius: 12px; font-size: 1.05rem; font-weight: 800; cursor: pointer; }
+.bk-laden-cancel { background: #fff; border: 1.5px solid var(--c-line-2); color: var(--c-ink); }
+.bk-laden-go { background: var(--c-accent, #2E7D32); border: 0; color: #fff; }
+.bk-laden-go[disabled], .bk-laden-cancel[disabled] { opacity: .55; }
+.bk-laden-progress { margin-top: 16px; padding: 12px; border-radius: 12px; background: var(--c-bg, #F5FAF5); font-weight: 700; text-align: center; }
+.bk-laden-kicker { margin: 0; font-weight: 700; color: var(--c-ink-soft); text-transform: uppercase; letter-spacing: 1px; font-size: .85rem; }
+.bk-laden-num { margin: 4px 0 6px; font-family: var(--bk-font-heading, 'Fredoka', sans-serif); font-size: clamp(2.4rem, 7vw, 3.6rem); font-weight: 700; color: var(--c-accent-d, #1F5624); }
+.bk-laden-pay { font-size: 1.3rem; margin: 0 0 10px; }
+.bk-laden-list { max-height: 42vh; overflow-y: auto; margin: 16px 0 0; border: 1px solid var(--c-line); border-radius: 12px; text-align: left; }
+.bk-laden-list table { width: 100%; border-collapse: collapse; font-size: 1.05rem; }
+.bk-laden-list th { position: sticky; top: 0; background: #fff; text-align: left; padding: 10px 12px; color: var(--c-ink-soft); font-size: .9rem; }
+.bk-laden-list td { padding: 9px 12px; border-top: 1px solid var(--c-line); }
+.bk-laden-list td:nth-child(2), .bk-laden-list td:nth-child(3), .bk-laden-list th:nth-child(2), .bk-laden-list th:nth-child(3) { text-align: right; white-space: nowrap; }
+.bk-laden-dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin-right: 10px; vertical-align: -2px; border: 1px solid rgba(0,0,0,.25); }
+.bk-laden-next { margin-top: 20px; width: 100%; }

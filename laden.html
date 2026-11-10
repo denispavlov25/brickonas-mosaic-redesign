@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Dein Foto als Mosaik – Coffee &amp; Bricks</title>
+<style>
+  /* Start screen of the shop tablet (Coffee & Bricks). The guest scans the QR code, picks a photo on
+     their phone, and this page opens the configurator in shop mode as soon as the photo has arrived. */
+  :root { --g: #1F5624; --g2: #2E7D32; --gold: #FDD835; --ink: #1A1A1A; --soft: #4A5D4C; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: Nunito, "Segoe UI", Roboto, Arial, sans-serif; background: #F5FAF5; color: var(--ink);
+         display: flex; flex-direction: column; }
+  header { background: var(--g); color: #fff; text-align: center; padding: 28px 20px 24px; }
+  header .brand { letter-spacing: 6px; font-weight: 700; font-size: 1.1rem; opacity: .9; }
+  header h1 { margin: 10px 0 0; font-size: clamp(1.8rem, 4.5vw, 3rem); line-height: 1.15; }
+  header h1 span { color: var(--gold); }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; gap: 48px; padding: 32px 24px; flex-wrap: wrap; }
+  .qr { background: #fff; border-radius: 24px; padding: 24px; box-shadow: 0 10px 30px rgba(20,48,26,.12); text-align: center; }
+  .qr #qr svg { width: min(56vw, 360px); height: auto; display: block; }
+  .qr p { margin: 14px 0 0; font-weight: 700; color: var(--g2); font-size: 1.1rem; }
+  ol { list-style: none; padding: 0; margin: 0; max-width: 420px; counter-reset: s; }
+  ol li { counter-increment: s; display: flex; gap: 16px; align-items: flex-start; margin: 0 0 22px; font-size: 1.25rem; line-height: 1.45; }
+  ol li::before { content: counter(s); flex: 0 0 44px; height: 44px; border-radius: 50%; background: var(--g2); color: #fff;
+                  display: grid; place-items: center; font-weight: 800; }
+  .status { text-align: center; padding: 0 20px 24px; color: var(--soft); min-height: 2.6em; font-size: 1.05rem; }
+  .status.ok { color: var(--g2); font-weight: 700; font-size: 1.3rem; }
+  .err { margin: auto; max-width: 520px; text-align: center; padding: 40px 24px; font-size: 1.2rem; }
+  footer { text-align: center; font-size: .85rem; color: var(--soft); padding: 0 20px 18px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">COFFEE &amp; BRICKS</div>
+  <h1>Dein Foto als <span>Mosaik</span></h1>
+</header>
+<main id="main">
+  <div class="qr"><div id="qr"></div><p>Mit dem Handy scannen</p></div>
+  <ol>
+    <li>QR-Code mit der Handy-Kamera scannen</li>
+    <li>Auf dem Handy ein Foto auswählen – es erscheint hier auf dem Tablet</li>
+    <li>Mosaik gestalten, an der Kasse bezahlen, Steine abwiegen und bauen</li>
+  </ol>
+</main>
+<div class="status" id="status">QR-Code wird vorbereitet …</div>
+<footer>Dein Foto wird nur für dein Mosaik genutzt und spätestens nach 30 Minuten gelöscht.</footer>
+
+<script src="js/vendor/qrcode-generator-1.4.4.js"></script>
+<script>
+(function () {
+    var params = new URLSearchParams(location.search);
+    var key = params.get('k') || '';
+    var test = params.get('test') === '1';
+    var statusEl = document.getElementById('status');
+    var code = null, pollTimer = null, renewTimer = null;
+
+    if (!key) {
+        document.getElementById('main').innerHTML = '<p class="err">Diese Seite ist nur für das Tablet im Laden.</p>';
+        statusEl.textContent = '';
+        return;
+    }
+
+    function api(path) { return '/wp-json/bk-laden/v1/' + path; }
+
+    function showQr(url) {
+        var qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        document.getElementById('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+    }
+
+    function start() {
+        clearInterval(pollTimer);
+        clearTimeout(renewTimer);
+        var body = new URLSearchParams({ key: key });
+        fetch(api('session'), { method: 'POST', body: body, cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('session ' + r.status); return r.json(); })
+            .then(function (d) {
+                code = d.code;
+                showQr(d.phone_url);
+                statusEl.className = 'status';
+                statusEl.textContent = 'Warte auf dein Foto …';
+                pollTimer = setInterval(poll, 2000);
+                // A fresh code shortly before the old one runs out (30 min).
+                renewTimer = setTimeout(start, (d.expires - 120) * 1000);
+            })
+            .catch(function () {
+                statusEl.textContent = 'Keine Verbindung – neuer Versuch in 10 Sekunden …';
+                renewTimer = setTimeout(start, 10000);
+            });
+    }
+
+    function poll() {
+        fetch(api('session') + '?c=' + code + '&key=' + encodeURIComponent(key) + '&_=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.expired) { start(); return; }
+                if (!d.ready) return;
+                clearInterval(pollTimer);
+                clearTimeout(renewTimer);
+                statusEl.className = 'status ok';
+                statusEl.textContent = 'Foto ist da – das Mosaik wird geöffnet …';
+                var next = 'index.html?ui=new&laden=1&k=' + encodeURIComponent(key) + '&c=' + code +
+                           '&foto=' + encodeURIComponent(d.photo) + (test ? '&test=1' : '');
+                setTimeout(function () { location.href = next; }, 600);
+            })
+            .catch(function () { /* next poll tries again */ });
+    }
+
+    start();
+})();
+</script>
+</body>
+</html>

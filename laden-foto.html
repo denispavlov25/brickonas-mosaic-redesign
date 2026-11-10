@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Foto fürs Mosaik – Coffee &amp; Bricks</title>
+<style>
+  /* Opened on the guest's phone from the QR code on the shop tablet. Picks one photo, shrinks it on the
+     phone (fast upload, no huge originals on the server) and sends it to the tablet's session. */
+  :root { --g: #1F5624; --g2: #2E7D32; --gold: #FDD835; --ink: #1A1A1A; --soft: #4A5D4C; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Nunito, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #F5FAF5; color: var(--ink); }
+  header { background: var(--g); color: #fff; text-align: center; padding: 22px 16px; }
+  header .brand { letter-spacing: 5px; font-weight: 700; font-size: .9rem; opacity: .9; }
+  header h1 { margin: 6px 0 0; font-size: 1.6rem; }
+  header h1 span { color: var(--gold); }
+  main { padding: 24px 16px 32px; max-width: 480px; margin: 0 auto; text-align: center; }
+  .pick { display: block; width: 100%; padding: 20px; border: 0; border-radius: 16px; background: var(--g2); color: #fff;
+          font-size: 1.25rem; font-weight: 800; cursor: pointer; box-shadow: 0 6px 18px rgba(46,125,50,.3); }
+  .pick[disabled] { opacity: .6; }
+  #preview { display: none; width: 100%; max-height: 50vh; object-fit: contain; border-radius: 14px; margin: 18px 0 0; background: #fff; }
+  .msg { margin: 18px 0 0; font-size: 1.1rem; line-height: 1.5; min-height: 1.5em; }
+  .msg.ok { color: var(--g2); font-weight: 800; font-size: 1.3rem; }
+  .msg.err { color: #B3121F; font-weight: 700; }
+  .note { margin: 26px 0 0; font-size: .85rem; color: var(--soft); line-height: 1.5; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">COFFEE &amp; BRICKS</div>
+  <h1>Dein Foto als <span>Mosaik</span></h1>
+</header>
+<main>
+  <label class="pick" id="pickBtn" for="file">📷 Foto auswählen</label>
+  <input type="file" id="file" accept="image/*">
+  <img id="preview" alt="Dein ausgewähltes Foto">
+  <p class="msg" id="msg">Wähle ein Foto aus deiner Galerie oder mach ein neues.</p>
+  <p class="note">Dein Foto wird nur für dein Mosaik genutzt, an das Tablet im Laden geschickt und spätestens nach 30 Minuten gelöscht.</p>
+</main>
+<script>
+(function () {
+    var params = new URLSearchParams(location.search);
+    var c = params.get('c') || '', t = params.get('t') || '';
+    var msg = document.getElementById('msg'), file = document.getElementById('file'), pick = document.getElementById('pickBtn');
+    var preview = document.getElementById('preview');
+    var MAX = 2000; // longest side sent to the tablet; plenty for a mosaic
+
+    if (!c || !t) {
+        msg.className = 'msg err';
+        msg.textContent = 'Dieser Link ist unvollständig. Bitte den QR-Code am Tablet neu scannen.';
+        pick.style.display = 'none';
+        return;
+    }
+
+    function say(text, cls) { msg.className = 'msg' + (cls ? ' ' + cls : ''); msg.textContent = text; }
+
+    function shrink(f) {
+        return new Promise(function (resolve, reject) {
+            var img = new Image();
+            img.onload = function () {
+                var s = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+                var cv = document.createElement('canvas');
+                cv.width = Math.round(img.naturalWidth * s);
+                cv.height = Math.round(img.naturalHeight * s);
+                cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+                cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('blob')); }, 'image/jpeg', 0.9);
+                URL.revokeObjectURL(img.src);
+            };
+            img.onerror = function () { reject(new Error('decode')); };
+            img.src = URL.createObjectURL(f);
+        });
+    }
+
+    file.addEventListener('change', function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        preview.src = URL.createObjectURL(f);
+        preview.style.display = 'block';
+        say('Foto wird an das Tablet geschickt …');
+        pick.setAttribute('disabled', '');
+        shrink(f).then(function (blob) {
+            var fd = new FormData();
+            fd.append('c', c);
+            fd.append('t', t);
+            fd.append('photo', blob, 'foto.jpg');
+            return fetch('/wp-json/bk-laden/v1/photo', { method: 'POST', body: fd });
+        }).then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+        }).then(function (res) {
+            if (res.ok) {
+                say('Geschafft! Schau jetzt aufs Tablet. 🎉', 'ok');
+                pick.textContent = '📷 Anderes Foto wählen';
+            } else {
+                say((res.d && res.d.message) || 'Das hat nicht geklappt. Bitte nochmal versuchen.', 'err');
+            }
+        }).catch(function () {
+            say('Das Foto konnte nicht gelesen oder gesendet werden. Bitte ein anderes Foto versuchen.', 'err');
+        }).then(function () { pick.removeAttribute('disabled'); });
+    });
+})();
+</script>
+</body>
+</html>

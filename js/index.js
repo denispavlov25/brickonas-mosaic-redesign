@@ -4171,7 +4171,12 @@ function bkGramList() {
     // Until the mosaic is computed the canvas still has its default 300x150 size;
     // counting that would list thousands of "black" studs.
     if (step4Canvas.width !== targetResolution[0] || step4Canvas.height !== targetResolution[1]) return null;
-    var usedMap = getUsedPixelsStudMap(getPixelArrayFromCanvas(step4Canvas));
+    // Step 4 (the PDF's source) is only computed on demand; every edit in step 3 marks it stale.
+    // A stale canvas would list the colours of an earlier version of the picture.
+    if (!stepProcessed[4]) return null;
+    // Read the real brick colours: with "bleedthrough" on, step4Canvas holds darkened stand-ins
+    // that have no colour name. runStep4 draws the reverted colours on bricklinkCacheCanvas.
+    var usedMap = getUsedPixelsStudMap(getPixelArrayFromCanvas(bricklinkCacheCanvas));
     var rows = Object.keys(usedMap).map(function (hex) {
         var count = usedMap[hex];
         return {
@@ -4218,7 +4223,8 @@ function collectMosaicOrderData() {
     }
     // Collect used colors with names and counts
     var colors = [];
-    var usedMap = getUsedPixelsStudMap(getPixelArrayFromCanvas(step4Canvas));
+    // bricklinkCacheCanvas: real brick colours (step4Canvas is darkened while bleedthrough is on).
+    var usedMap = getUsedPixelsStudMap(getPixelArrayFromCanvas(bricklinkCacheCanvas));
     var hexKeys = Object.keys(usedMap);
     hexKeys.sort();
     hexKeys.forEach(function(hex) {
