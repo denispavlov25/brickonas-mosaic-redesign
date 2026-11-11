@@ -292,16 +292,49 @@ document.getElementById("height-text").title = `${(targetResolution[1] * PIXEL_W
 
 let inputImageCropper;
 
-function initializeCropper() {
+// The customer's own crop frame, in source-canvas pixels. Rebuilding the cropper for a new size or
+// format used to drop it and fall back to a centred frame (reported by Denis, 11.11.2026), so the
+// mosaic silently showed a different part of the photo. Recorded only while the crop view is really
+// on screen (a hidden cropper reports a collapsed default frame); cleared when a new photo is loaded.
+let bkKeptCrop = null;
+
+/** The kept frame adapted to a new aspect ratio: same centre, same area, kept inside the photo. */
+function bkCropForAspect(c, ar) {
+    if (!c || !isFinite(c.width) || !(c.width > 0) || !isFinite(ar) || !(ar > 0)) return null;
+    const turned = Math.abs(c.rotate || 0) % 180 === 90;
+    const W = turned ? step1CanvasUpscaled.height : step1CanvasUpscaled.width;
+    const H = turned ? step1CanvasUpscaled.width : step1CanvasUpscaled.height;
+    let w = Math.sqrt(c.width * c.height * ar), h = w / ar;
+    if (w > W) { w = W; h = w / ar; }
+    if (h > H) { h = H; w = h * ar; }
+    const cx = c.x + c.width / 2, cy = c.y + c.height / 2;
+    return {
+        x: Math.min(Math.max(cx - w / 2, 0), W - w),
+        y: Math.min(Math.max(cy - h / 2, 0), H - h),
+        width: w, height: h,
+        rotate: c.rotate || 0, scaleX: c.scaleX || 1, scaleY: c.scaleY || 1,
+    };
+}
+
+step1CanvasUpscaled.addEventListener("crop", () => {
+    const box = inputImageCropper && inputImageCropper.cropper;
+    if (!box || box.offsetWidth < 100) return; // crop view not on screen
+    const d = inputImageCropper.getData();
+    if (d && isFinite(d.width) && d.width > 0 && isFinite(d.height) && d.height > 0) bkKeptCrop = d;
+});
+
+function initializeCropper(keepCrop) {
     if (inputImageCropper != null) {
         inputImageCropper.destroy();
     }
+    const keep = keepCrop ? bkCropForAspect(bkKeptCrop, targetResolution[0] / targetResolution[1]) : null;
     inputImageCropper = new Cropper(step1CanvasUpscaled, {
         aspectRatio: targetResolution[0] / targetResolution[1],
         viewMode: 1,
         minContainerWidth: 1,
         minContainerHeight: 1,
         zoomable: false,
+        data: keep,
         cropend() {
             overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
             overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
@@ -447,7 +480,7 @@ function handleResolutionChange() {
     $('[data-toggle="tooltip"]').tooltip("dispose");
     $('[data-toggle="tooltip"]').tooltip();
     updatePlateDimensions();
-    initializeCropper();
+    initializeCropper(true); // keep the customer's crop across size/format changes
     if (typeof updateMosaicProductMeta === 'function') updateMosaicProductMeta();
     runStep1();
 }
@@ -3770,6 +3803,7 @@ function handleInputImage(e, dontClearDepth, dontLog) {
 
             overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
             overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+            bkKeptCrop = null; // new photo: the old frame does not apply
             initializeCropper();
             runStep1();
         };
@@ -4004,6 +4038,7 @@ function showVisualStep(vstep) {
             0, 0, SERIALIZE_EDGE_LENGTH, SERIALIZE_EDGE_LENGTH,
             0, 0, step1CanvasUpscaled.width, step1CanvasUpscaled.height
         );
+        bkKeptCrop = null; // new photo: the old frame does not apply
         initializeCropper();
         invalidateStepsFrom(2);
         stepProcessed[1] = true;
@@ -4170,7 +4205,8 @@ function bkGramList() {
     if (typeof step4Canvas === 'undefined' || !step4Canvas) return null;
     // Until the mosaic is computed the canvas still has its default 300x150 size;
     // counting that would list thousands of "black" studs.
-    if (step4Canvas.width !== targetResolution[0] || step4Canvas.height !== targetResolution[1]) return null;
+    // Number(): after a size change targetResolution holds strings ("64"), which never === a canvas width.
+    if (step4Canvas.width !== Number(targetResolution[0]) || step4Canvas.height !== Number(targetResolution[1])) return null;
     // Step 4 (the PDF's source) is only computed on demand; every edit in step 3 marks it stale.
     // A stale canvas would list the colours of an earlier version of the picture.
     if (!stepProcessed[4]) return null;

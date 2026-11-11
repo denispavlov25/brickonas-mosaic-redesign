@@ -205,6 +205,11 @@
 
     /* ---------------------------------------------------------- done screen */
     function showDone(d, email, list) {
+        // The card's status line still says "Anleitung wird erstellt — 95 %" (the online flow overwrites it
+        // with its cart message, shop mode does not). Clear it, and show the list in the card as well.
+        var st = document.getElementById("mosaic-order-status");
+        if (st) { st.className = "mosaic-order-status"; st.textContent = ""; }
+        if (typeof bkRenderGramList === "function") bkRenderGramList();
         var rows = "";
         if (list) {
             list.rows.forEach(function (r) {
