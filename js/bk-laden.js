@@ -69,6 +69,7 @@
         if (b.textContent.indexOf(PAY_LABEL) === -1 && !b.classList.contains("bk-adding")) b.textContent = PAY_LABEL;
     }
     function adaptOrderCard() {
+        limitToWall();
         // Only write when different: this runs from a body MutationObserver, and an unconditional write
         // would trigger it again forever (froze the tablet in the first clone test).
         var desc = document.querySelector(".mosaic-product-desc");
@@ -116,11 +117,65 @@
         };
     }
 
+    /* ---------------------------------------------------------- only the wall's colours */
+    // The mosaic wall holds the 35 colours of the standard palette (Jonas, 10.11.). Two editor features
+    // can bring in others (Denis, 11.11.): every style template swaps in 2-4 catalogue colours, and the
+    // pen offers all 80. In shop mode the templates are hidden (the sliders stay — they only change the
+    // photo) and the pen offers the wall colours only. Removing colours under "Steine" and the AI tools
+    // stay: their result is always mapped onto the active colours.
+    var WALL = null;
+    function wallHexes() {
+        if (WALL) return WALL;
+        try {
+            var m = STUD_MAPS[DEFAULT_STUD_MAP];
+            WALL = Object.keys(m.studMap || m).map(function (h) { return h.toLowerCase(); });
+        } catch (e) { WALL = []; }
+        return WALL;
+    }
+    function rgbHex(rgb) {
+        var m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(rgb || "");
+        return m ? "#" + [m[1], m[2], m[3]].map(function (v) { return ("0" + (+v).toString(16)).slice(-2); }).join("") : null;
+    }
+    function limitToWall() {
+        var picker = document.getElementById("bk-style-picker");
+        // Runs on every DOM change: the editor moves the picker into the "Stil" panel only after it mounts.
+        if (picker) {
+            picker.style.display = "none";
+            [].forEach.call(picker.parentElement ? picker.parentElement.children : [], function (n) {
+                var t = n.textContent.trim();
+                if (n !== picker && n.style.display !== "none" && /^(Stil-Vorlagen|Eine Vorlage tauscht)/.test(t)) n.style.display = "none";
+                if (/^Eine Vorlage wählen/.test(t)) n.textContent = "Helligkeit, Kontrast und Farbe fein nachregeln.";
+            });
+        }
+        var wall = wallHexes();
+        if (!wall.length) return;
+        document.querySelectorAll("#paintbrush-controls .dropdown-item").forEach(function (a) {
+            if (a.dataset.bkLaden) return;
+            a.dataset.bkLaden = "1";
+            var sq = a.querySelector("div[style*='background']");
+            var hex = sq && rgbHex(sq.style.backgroundColor);
+            if (hex && wall.indexOf(hex) === -1) a.style.display = "none";
+        });
+    }
+    /** Colours of the finished mosaic that are not on the wall (empty = fine). */
+    function offWall(list) {
+        var wall = wallHexes();
+        if (!list || !wall.length) return [];
+        return list.rows.filter(function (r) { return wall.indexOf(String(r.hex).toLowerCase()) === -1; })
+                        .map(function (r) { return r.name; });
+    }
+
     /* ---------------------------------------------------------- e-mail form */
     function openForm() {
         if (busy) return;
         var info = typeof getMosaicVariationInfo === "function" ? getMosaicVariationInfo() : null;
         if (!info || !info.vid) { alert("Diese Größe kann im Laden nicht bestellt werden."); return; }
+        var bad = offWall(window.bkGramList ? window.bkGramList() : null);
+        if (bad.length) {
+            alert("Diese Farben gibt es an unserer Steinwand nicht: " + bad.join(", ") +
+                  ".\nBitte unter „Malen“ übermalen oder unter „Steine“ entfernen.");
+            return;
+        }
         var ov = el("div", "bk-laden-ov");
         ov.innerHTML =
             '<form class="bk-laden-card" novalidate>' +
@@ -176,6 +231,8 @@
             .then(function (t) {
                 token = t;
                 var list = window.bkGramList ? window.bkGramList() : null;
+                var bad = offWall(list);
+                if (bad.length) throw new Error("Diese Farben gibt es an unserer Steinwand nicht: " + bad.join(", ") + ". Bitte ändern und nochmal bestellen.");
                 progress(ov, "Bestellung wird angelegt …");
                 return fetch("/wp-json/bk-laden/v1/order", {
                     method: "POST",
