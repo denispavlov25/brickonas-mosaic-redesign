@@ -123,12 +123,27 @@
     // pen offers all 80. In shop mode the templates are hidden (the sliders stay — they only change the
     // photo) and the pen offers the wall colours only. Removing colours under "Steine" and the AI tools
     // stay: their result is always mapped onto the active colours.
+    // Standard colours the wall does NOT stock (Jonas, 12.11.2026): Dark Orange, Neon Yellow.
+    var NOT_ON_WALL = ["#b35408", "#fffc00"];
     var WALL = null;
+    /** Take the missing colours out of the active palette before the first mosaic is computed. */
+    function dropMissingColours() {
+        var body = document.getElementById("custom-stud-table-body");
+        if (!body) return;
+        var removed = 0;
+        [].slice.call(body.children).forEach(function (row) {
+            var chip = row.querySelector("button div[style*='background']");
+            var hex = chip && rgbHex(chip.style.backgroundColor);
+            if (hex && NOT_ON_WALL.indexOf(hex) !== -1) { body.removeChild(row); removed++; }
+        });
+        if (removed && typeof runCustomStudMap === "function") runCustomStudMap(true);
+    }
     function wallHexes() {
         if (WALL) return WALL;
         try {
             var m = STUD_MAPS[DEFAULT_STUD_MAP];
-            WALL = Object.keys(m.studMap || m).map(function (h) { return h.toLowerCase(); });
+            WALL = Object.keys(m.studMap || m).map(function (h) { return h.toLowerCase(); })
+                .filter(function (h) { return NOT_ON_WALL.indexOf(h) === -1; });
         } catch (e) { WALL = []; }
         return WALL;
     }
@@ -313,6 +328,7 @@
         else window.addEventListener("load", function () { setTimeout(fn, 400); });
     }
     whenReady(function () {
+        dropMissingColours();
         loadPhoto();
         adaptOrderCard();
         // The order card is moved into the editor once it mounts; adapt it again then.
